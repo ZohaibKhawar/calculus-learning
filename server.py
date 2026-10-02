@@ -5,20 +5,25 @@ Run it:
     python server.py
 Then open http://localhost:5000
 
-There are no accounts. Each browser makes a random ID the first time it visits
-and sends it in the X-User header, so progress, notes and posts belong to it.
+There are no accounts. The server gives each browser a random ID the first time
+it visits, kept in a signed, HttpOnly cookie, so progress, notes and posts belong to it.
 """
 import json
+import os
+import random
 import re
+import secrets
 import sqlite3
 import threading
+import time
 import uuid
 import zipfile
 from datetime import date, timedelta
 from pathlib import Path
 
-from flask import Flask, abort, g, jsonify, request, send_from_directory
-from werkzeug.exceptions import HTTPException
+from flask import Flask, abort, g, jsonify, redirect, request, send_from_directory, session
+from werkzeug.exceptions import HTTPException, TooManyRequests
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 import video_ai
 import videos
@@ -28,9 +33,31 @@ BASE = Path(__file__).parent
 DB_PATH = BASE / "calclearners.db"
 UPLOADS = BASE / "uploads"
 UPLOADS.mkdir(exist_ok=True)
+SECRET_FILE = BASE / "secret_key"
+
+
+def secret_key():
+    """SECRET_KEY from the environment, or one generated once and kept next to the database."""
+    if os.environ.get("SECRET_KEY"):
+        return os.environ["SECRET_KEY"]
+    if not SECRET_FILE.exists():
+        SECRET_FILE.write_text(secrets.token_hex(32))
+    return SECRET_FILE.read_text().strip()
+
 
 app = Flask(__name__, static_folder="static", static_url_path="")
-app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10 MB uploads
+# PythonAnywhere sits behind one proxy: trust its X-Forwarded-For / -Proto so we see
+# the visitor's real IP (for rate limits) and know when the request came over HTTPS.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
+app.config.update(
+    SECRET_KEY=secret_key(),
+    MAX_CONTENT_LENGTH=10 * 1024 * 1024,  # 10 MB uploads
+    SESSION_COOKIE_NAME="cl_id",
+    SESSION_COOKIE_HTTPONLY=True,          # page scripts can't read (or leak) the ID
+    SESSION_COOKIE_SAMESITE="Lax",         # other sites can't send it with their POSTs
+    SESSION_COOKIE_SECURE=True,            # HTTPS only (turned off for local runs below)
+    PERMANENT_SESSION_LIFETIME=timedelta(days=400),
+)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -115,6 +142,11 @@ CREATE TABLE IF NOT EXISTS videos (  -- AI-made lessons (hand-written ones live 
     source_hash TEXT,
     created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS rate_limits (
+    key TEXT PRIMARY KEY,        -- rule:who:window length
+    window INTEGER NOT NULL,     -- start of the current window (unix seconds)
+    hits INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS video_progress (
     user_id TEXT NOT NULL,
     video_id TEXT NOT NULL,
@@ -176,17 +208,110 @@ def init_db():
                 conn.execute("UPDATE uploads SET video_id = ? WHERE id = ?", (vid, upload_id))
 
 
-# ---------- Request helpers ----------
-USER_RE = re.compile(r"^[A-Za-z0-9-]{8,64}$")
+# ---------- Rate limiting ----------
+# Fixed-window counters kept in SQLite, so every web worker shares them and they
+# survive restarts. Each rule is (max hits, window in seconds).
+def client_ip():
+    return request.remote_addr or "unknown"
+
+
+def _wait_text(seconds):
+    if seconds < 90:
+        return f"{max(1, seconds)} seconds"
+    if seconds < 5400:
+        return f"{round(seconds / 60)} minutes"
+    return f"{round(seconds / 3600)} hours"
+
+
+def limit(rule, who, max_hits, seconds, message="You're doing that too often."):
+    """Count one hit for `who` under `rule`; answer 429 once they pass max_hits in the window."""
+    now = int(time.time())
+    window = now - now % seconds
+    key = f"{rule}:{who}:{seconds}"
+    run("""INSERT INTO rate_limits (key, window, hits) VALUES (?, ?, 1)
+           ON CONFLICT (key) DO UPDATE SET
+             hits = CASE WHEN window = excluded.window THEN hits + 1 ELSE 1 END,
+             window = excluded.window""", (key, window))
+    hits = one("SELECT hits FROM rate_limits WHERE key = ?", (key,))["hits"]
+    if random.random() < 0.01:  # now and then, forget windows that ended long ago
+        run("DELETE FROM rate_limits WHERE window < ?", (now - 2 * 86400,))
+    if hits > max_hits:
+        retry = window + seconds - now
+        raise TooManyRequests(f"{message} Try again in {_wait_text(retry)}.", retry_after=retry)
+
+
+# ---------- Identity ----------
+# Before cookies, the browser made its own ID and sent it as X-User. A browser that
+# still has one of those (36-char UUID or similar) can claim it once, so nobody loses
+# their progress; brand-new IDs are only ever made here, and are rate limited per IP.
+LEGACY_ID_RE = re.compile(r"^[A-Za-z0-9-]{16,64}$")
 
 
 def current_user():
-    """Return the caller's ID from the X-User header, creating the user if new."""
-    uid = request.headers.get("X-User", "")
-    if not USER_RE.match(uid):
-        abort(400, "Missing or invalid X-User header.")
-    run("INSERT OR IGNORE INTO users (id) VALUES (?)", (uid,))
+    """Return the caller's ID from their signed cookie, issuing a new one if needed."""
+    uid = session.get("uid")
+    if uid and one("SELECT 1 FROM users WHERE id = ?", (uid,)):
+        return uid
+    legacy = request.headers.get("X-User", "")
+    if LEGACY_ID_RE.match(legacy) and one("SELECT 1 FROM users WHERE id = ?", (legacy,)):
+        uid = legacy
+    else:
+        limit("new-id", client_ip(), 30, 3600, "Too many new visitors from your network.")
+        limit("new-id", client_ip(), 200, 86400, "Too many new visitors from your network.")
+        uid = secrets.token_urlsafe(24)
+        run("INSERT INTO users (id) VALUES (?)", (uid,))
+    session.permanent = True
+    session["uid"] = uid
     return uid
+
+
+# ---------- Request guards & security headers ----------
+@app.before_request
+def force_https():
+    # Behind the hosting proxy, send plain-HTTP visitors to HTTPS (local runs have no proxy header).
+    if request.headers.get("X-Forwarded-Proto") == "http":
+        return redirect(request.url.replace("http://", "https://", 1), code=301)
+
+
+@app.before_request
+def guard_api():
+    if not request.path.startswith("/api/"):
+        return
+    # Backstop for scripts hammering the API from one address (schools share IPs, so it's generous).
+    limit("ip", client_ip(), 300, 60, "Too many requests from your network.")
+    # Cross-site request forgery: a page on another site can't add this header
+    # without a CORS preflight, which we never approve.
+    if request.method in ("POST", "PUT", "DELETE") and request.headers.get("X-Requested-With") != "CalcLearners":
+        abort(403, "Missing request header.")
+
+
+CSP = "; ".join([
+    "default-src 'self'",
+    "script-src 'self' https://cdn.jsdelivr.net",
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
+    "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net",
+    "img-src 'self' data:",
+    "connect-src 'self' http://localhost:5000",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+])
+
+
+@app.after_request
+def security_headers(resp):
+    resp.headers["Content-Security-Policy"] = CSP
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["X-Frame-Options"] = "DENY"
+    resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    resp.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
+    resp.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    if request.is_secure:
+        resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    if request.path.startswith("/api/"):
+        resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 def body():
@@ -236,7 +361,10 @@ def allow_local_probe(resp):
 
 @app.errorhandler(HTTPException)
 def json_error(e):
-    return jsonify(error=e.description), e.code
+    resp = jsonify(error=e.description)
+    if getattr(e, "retry_after", None):
+        resp.headers["Retry-After"] = str(e.retry_after)
+    return resp, e.code
 
 
 # ---------- Moderation ----------
@@ -305,9 +433,15 @@ def me():
     )
 
 
+def limit_saves(uid):
+    """Progress, quiz scores, notes: the page saves these often, but never this often."""
+    limit("save", uid, 120, 60, "You're saving too quickly.")
+
+
 @app.post("/api/me")
 def set_name():
     uid = current_user()
+    limit("name", uid, 10, 3600, "You've changed your name a lot.")
     name = str(body().get("name", "")).strip()[:40]
     if BAD_WORDS.search(name):
         abort(400, "Please choose a different name.")
@@ -318,6 +452,7 @@ def set_name():
 @app.post("/api/visit")
 def visit():
     uid = current_user()
+    limit_saves(uid)
     topic = topic_or_400(body().get("topic"))
     run("UPDATE users SET last_topic = ? WHERE id = ?", (topic, uid))
     mark_active(uid)
@@ -327,6 +462,7 @@ def visit():
 @app.post("/api/progress")
 def progress():
     uid = current_user()
+    limit_saves(uid)
     data = body()
     topic = topic_or_400(data.get("topic"))
     if data.get("done"):
@@ -340,6 +476,7 @@ def progress():
 @app.post("/api/quiz")
 def quiz():
     uid = current_user()
+    limit_saves(uid)
     data = body()
     topic = topic_or_400(data.get("topic"))
     try:
@@ -356,9 +493,15 @@ def quiz():
 @app.post("/api/reset")
 def reset():
     uid = current_user()
-    for table in ("progress", "quiz_scores", "notes", "activity", "video_progress"):
-        run(f"DELETE FROM {table} WHERE user_id = ?", (uid,))
-    run("UPDATE users SET last_topic = NULL WHERE id = ?", (uid,))
+    limit("reset", uid, 5, 3600, "You've reset your progress a lot.")
+    # One fixed statement per table: no SQL is ever built from strings.
+    for sql in ("DELETE FROM progress WHERE user_id = ?",
+                "DELETE FROM quiz_scores WHERE user_id = ?",
+                "DELETE FROM notes WHERE user_id = ?",
+                "DELETE FROM activity WHERE user_id = ?",
+                "DELETE FROM video_progress WHERE user_id = ?",
+                "UPDATE users SET last_topic = NULL WHERE id = ?"):
+        run(sql, (uid,))
     return jsonify(ok=True)
 
 
@@ -374,6 +517,7 @@ def get_note(topic):
 @app.put("/api/notes/<topic>")
 def put_note(topic):
     uid = current_user()
+    limit_saves(uid)
     topic_or_400(topic)
     text = str(body().get("body", ""))[:10000]
     run("""INSERT INTO notes (user_id, topic_id, body) VALUES (?, ?, ?)
@@ -383,38 +527,48 @@ def put_note(topic):
 
 
 # ---------- Forum ----------
+# The whole forum query is one fixed string. Sorting and the "unanswered" filter are
+# switched by parameters (? = 'top' ...), so user input only ever travels as data.
+QUESTIONS_SQL = """
+    SELECT * FROM (
+        SELECT q.id, q.author, q.topic_id, q.title, q.body, q.created,
+               q.user_id = :uid AS mine,
+               (SELECT COUNT(*) FROM votes v WHERE v.kind = 'q' AND v.target_id = q.id) AS votes,
+               EXISTS (SELECT 1 FROM votes v WHERE v.kind = 'q' AND v.target_id = q.id AND v.user_id = :uid) AS voted,
+               (SELECT COUNT(*) FROM answers a WHERE a.question_id = q.id) AS answer_count
+        FROM questions q
+        WHERE (:topic = '' OR q.topic_id = :topic)
+          AND (:search = '' OR q.title LIKE :like ESCAPE '\\' OR q.body LIKE :like ESCAPE '\\')
+    )
+    WHERE (:sort != 'unanswered' OR answer_count = 0)
+    ORDER BY CASE WHEN :sort = 'top' THEN votes END DESC, created DESC, id DESC
+    LIMIT 100"""
+
+ANSWERS_SQL = """
+    SELECT a.id, a.question_id, a.author, a.body, a.helpful, a.created,
+           a.user_id = :uid AS mine,
+           (SELECT COUNT(*) FROM votes v WHERE v.kind = 'a' AND v.target_id = a.id) AS votes,
+           EXISTS (SELECT 1 FROM votes v WHERE v.kind = 'a' AND v.target_id = a.id AND v.user_id = :uid) AS voted
+    FROM answers a
+    WHERE a.question_id IN (SELECT value FROM json_each(:ids))
+    ORDER BY a.helpful DESC, votes DESC, a.created"""
+
+
 @app.get("/api/questions")
 def list_questions():
     uid = current_user()
-    topic = request.args.get("topic", "")
-    search = request.args.get("q", "").strip()
+    topic = request.args.get("topic", "")[:80]
+    search = request.args.get("q", "").strip()[:100]
     sort = request.args.get("sort", "new")
-    like = f"%{search}%"
-    qs = rows(f"""
-        SELECT q.id, q.author, q.topic_id, q.title, q.body, q.created,
-               q.user_id = ? AS mine,
-               (SELECT COUNT(*) FROM votes v WHERE v.kind = 'q' AND v.target_id = q.id) AS votes,
-               EXISTS (SELECT 1 FROM votes v WHERE v.kind = 'q' AND v.target_id = q.id AND v.user_id = ?) AS voted,
-               (SELECT COUNT(*) FROM answers a WHERE a.question_id = q.id) AS answer_count
-        FROM questions q
-        WHERE (? = '' OR q.topic_id = ?)
-          AND (? = '' OR q.title LIKE ? OR q.body LIKE ?)
-        {"AND answer_count = 0" if sort == "unanswered" else ""}
-        ORDER BY {"votes DESC, q.created DESC" if sort == "top" else "q.created DESC, q.id DESC"}
-        LIMIT 100""", (uid, uid, topic, topic, search, like, like))
+    if sort not in ("new", "top", "unanswered"):
+        sort = "new"
+    # % and _ are LIKE wildcards: escape them so a search for "50%" means just that.
+    like = "%" + re.sub(r"([\\%_])", r"\\\1", search) + "%"
+    qs = rows(QUESTIONS_SQL, {"uid": uid, "topic": topic, "search": search, "like": like, "sort": sort})
 
-    ids = [q["id"] for q in qs]
     answers = {}
-    if ids:
-        marks = ",".join("?" * len(ids))
-        for a in rows(f"""
-            SELECT a.id, a.question_id, a.author, a.body, a.helpful, a.created,
-                   a.user_id = ? AS mine,
-                   (SELECT COUNT(*) FROM votes v WHERE v.kind = 'a' AND v.target_id = a.id) AS votes,
-                   EXISTS (SELECT 1 FROM votes v WHERE v.kind = 'a' AND v.target_id = a.id AND v.user_id = ?) AS voted
-            FROM answers a WHERE a.question_id IN ({marks})
-            ORDER BY a.helpful DESC, votes DESC, a.created""", (uid, uid, *ids)):
-            answers.setdefault(a["question_id"], []).append(a)
+    for a in rows(ANSWERS_SQL, {"uid": uid, "ids": json.dumps([q["id"] for q in qs])}):
+        answers.setdefault(a["question_id"], []).append(a)
     for q in qs:
         q["answers"] = answers.get(q["id"], [])
     return jsonify(qs)
@@ -423,6 +577,9 @@ def list_questions():
 @app.post("/api/questions")
 def ask():
     uid = current_user()
+    limit("ask", uid, 5, 600, "You've asked a lot of questions.")
+    limit("ask", uid, 30, 86400, "You've reached today's question limit.")
+    limit("ask-ip", client_ip(), 40, 3600, "Lots of questions are coming from your network.")
     data = body()
     title = check_post(str(data.get("title", "")), 10, "question")
     details = str(data.get("body", "")).strip()
@@ -439,6 +596,7 @@ def ask():
 @app.delete("/api/questions/<int:qid>")
 def delete_question(qid):
     uid = current_user()
+    limit("delete", uid, 30, 3600)
     q = one("SELECT user_id FROM questions WHERE id = ?", (qid,)) or abort(404, "Question not found.")
     if q["user_id"] != uid:
         abort(403, "You can only delete your own questions.")
@@ -451,6 +609,9 @@ def delete_question(qid):
 @app.post("/api/questions/<int:qid>/answers")
 def answer(qid):
     uid = current_user()
+    limit("answer", uid, 10, 600, "You've posted a lot of answers.")
+    limit("answer", uid, 100, 86400, "You've reached today's answer limit.")
+    limit("answer-ip", client_ip(), 80, 3600, "Lots of answers are coming from your network.")
     q = one("SELECT title, body FROM questions WHERE id = ?", (qid,)) or abort(404, "Question not found.")
     text = check_answer(q["title"] + " " + q["body"], str(body().get("body", "")))
     run("INSERT INTO answers (question_id, user_id, author, body) VALUES (?, ?, ?, ?)",
@@ -461,6 +622,7 @@ def answer(qid):
 @app.post("/api/answers/<int:aid>/helpful")
 def helpful(aid):
     uid = current_user()
+    limit("helpful", uid, 60, 3600)
     a = one("""SELECT a.helpful, q.user_id AS asker FROM answers a
                JOIN questions q ON q.id = a.question_id WHERE a.id = ?""", (aid,)) or abort(404, "Answer not found.")
     if a["asker"] != uid:
@@ -472,10 +634,17 @@ def helpful(aid):
 @app.post("/api/vote")
 def vote():
     uid = current_user()
+    limit("vote", uid, 30, 60, "You're voting very fast.")
+    limit("vote", uid, 300, 86400, "You've reached today's voting limit.")
     data = body()
-    kind, target = data.get("kind"), data.get("id")
-    table = {"q": "questions", "a": "answers"}.get(kind) or abort(400, "Unknown vote type.")
-    post = one(f"SELECT user_id FROM {table} WHERE id = ?", (target,)) or abort(404, "Post not found.")
+    kind = data.get("kind")
+    try:
+        target = int(data.get("id"))
+    except (TypeError, ValueError):
+        abort(400, "Unknown post.")
+    owner_sql = {"q": "SELECT user_id FROM questions WHERE id = ?",
+                 "a": "SELECT user_id FROM answers WHERE id = ?"}.get(kind) or abort(400, "Unknown vote type.")
+    post = one(owner_sql, (target,)) or abort(404, "Post not found.")
     if post["user_id"] == uid:
         abort(400, "You can't upvote your own post.")
     key = (uid, kind, target)
@@ -496,15 +665,35 @@ def feedback_count():
 @app.post("/api/feedback")
 def feedback():
     uid = current_user()
+    limit("feedback", uid, 5, 3600, "Thanks, we've got plenty of feedback from you for now.")
     answers = body().get("answers")
-    if not isinstance(answers, list) or not any(str(a[1]).strip() for a in answers if isinstance(a, list) and len(a) == 2):
+    if not isinstance(answers, list):
         abort(400, "Please answer at least one question.")
-    run("INSERT INTO feedback (user_id, answers) VALUES (?, ?)", (uid, json.dumps(answers)[:20000]))
+    # Keep only [question, answer] pairs, each trimmed, so the stored JSON is always valid.
+    answers = [[str(q)[:300], str(a).strip()[:3000]] for q, a in
+               (p for p in answers[:10] if isinstance(p, list) and len(p) == 2)]
+    if not any(a for _, a in answers):
+        abort(400, "Please answer at least one question.")
+    run("INSERT INTO feedback (user_id, answers) VALUES (?, ?)", (uid, json.dumps(answers)))
     return jsonify(ok=True)
 
 
 # ---------- Uploads ----------
-ALLOWED = {".pdf", ".docx", ".txt", ".doc"}
+ALLOWED = {".pdf", ".docx", ".txt"}
+UPLOADS_CAP = 300 * 1024 * 1024        # stop taking uploads before the host's disk quota fills
+DOCX_XML_CAP = 20 * 1024 * 1024        # a .docx whose text unzips past this is a zip bomb
+TEXT_CAP = 200_000                     # characters of text kept for topic matching
+
+
+def looks_like(path, ext):
+    """Check the file really is what its extension says (first bytes), so nothing else gets parsed."""
+    with open(path, "rb") as fh:
+        head = fh.read(8)
+    if ext == ".pdf":
+        return head.startswith(b"%PDF-")
+    if ext == ".docx":
+        return head.startswith(b"PK\x03\x04")
+    return b"\x00" not in head  # plain text has no NUL bytes
 
 
 def extract_text(path):
@@ -512,18 +701,32 @@ def extract_text(path):
     ext = path.suffix.lower()
     try:
         if ext == ".txt":
-            return path.read_text(errors="ignore")
+            with open(path, encoding="utf8", errors="ignore") as fh:
+                return fh.read(TEXT_CAP)
         if ext == ".docx":
             with zipfile.ZipFile(path) as z:
-                xml = z.read("word/document.xml").decode("utf8", "ignore")
-            return re.sub(r"<[^>]+>", " ", xml)
+                info = z.getinfo("word/document.xml")
+                if info.file_size > DOCX_XML_CAP:
+                    return ""
+                with z.open(info) as fh:
+                    xml = fh.read(DOCX_XML_CAP).decode("utf8", "ignore")
+            return re.sub(r"<[^>]+>", " ", xml)[:TEXT_CAP]
         if ext == ".pdf":
             from pypdf import PdfReader
             reader = PdfReader(path)
-            return " ".join((p.extract_text() or "") for p in reader.pages[:30])
+            text = ""
+            for page in reader.pages[:20]:
+                text += (page.extract_text() or "") + " "
+                if len(text) > TEXT_CAP:
+                    break
+            return text[:TEXT_CAP]
     except Exception:
         pass
     return ""
+
+
+def uploads_size():
+    return sum(p.stat().st_size for p in UPLOADS.iterdir() if p.is_file())
 
 
 def match_topics(text):
@@ -543,26 +746,39 @@ def match_topics(text):
 @app.post("/api/upload")
 def upload():
     uid = current_user()
+    limit("upload", uid, 5, 3600, "You've uploaded a lot of files.")
+    limit("upload", uid, 15, 86400, "You've reached today's upload limit.")
+    limit("upload-ip", client_ip(), 40, 86400, "Lots of uploads are coming from your network.")
     f = request.files.get("file")
     if not f or not f.filename:
         abort(400, "Choose a file first.")
-    ext = Path(f.filename).suffix.lower()
+    filename = f.filename[:200]
+    ext = Path(filename).suffix.lower()
     if ext not in ALLOWED:
         abort(400, "Please upload a PDF, Word (.docx) or text file.")
+    if uploads_size() > UPLOADS_CAP:
+        abort(503, "Uploads are paused for now because storage is full. Please try again later.")
     try:
-        style = int(request.form.get("style", 0))
+        style = min(4, max(0, int(request.form.get("style", 0))))
     except ValueError:
         style = 0
     stored = f"{uuid.uuid4().hex}{ext}"
     path = UPLOADS / stored
     f.save(path)
+    if not looks_like(path, ext):
+        path.unlink(missing_ok=True)
+        abort(400, f"That file isn't a real {ext} file. Please upload a PDF, Word (.docx) or text file.")
 
     text = extract_text(path)
-    topics = match_topics(text + " " + f.filename)
+    topics = match_topics(text + " " + filename)
     video_id = find_or_start_video(path, stored) if ext == ".pdf" else None
+    # Keep the file only while an AI lesson might still need it (for Retry); otherwise
+    # we already have what we need from it.
+    if not one("SELECT 1 FROM videos WHERE source_file = ?", (stored,)):
+        path.unlink(missing_ok=True)
     run("INSERT INTO uploads (user_id, filename, stored_name, style, topics, video_id) VALUES (?, ?, ?, ?, ?, ?)",
-        (uid, f.filename[:200], stored, style, json.dumps(topics), video_id))
-    return jsonify(filename=f.filename, style=style, topics=topics, read_text=bool(text.strip()),
+        (uid, filename, stored, style, json.dumps(topics), video_id))
+    return jsonify(filename=filename, style=style, topics=topics, read_text=bool(text.strip()),
                    video=video_info(video_id) if video_id else None, ai_available=video_ai.available())
 
 
@@ -588,6 +804,9 @@ def find_or_start_video(path, stored):
         return existing["id"]
     if not video_ai.available():
         return None
+    # AI lessons cost real money per PDF: cap them for the whole site, and per person.
+    limit("ai", "site", 10, 86400, "Today's AI lesson limit for the site is used up.")
+    limit("ai-user", current_user(), 2, 86400, "You can make 2 AI lessons a day.")
     video_id = "v" + uuid.uuid4().hex[:12]
     run("INSERT INTO videos (id, status, message, source_file, source_hash) VALUES (?, 'generating', ?, ?, ?)",
         (video_id, "Starting…", stored, digest))
@@ -682,6 +901,7 @@ def get_video(video_id):
 @app.post("/api/videos/<video_id>/progress")
 def save_video_progress(video_id):
     uid = current_user()
+    limit_saves(uid)
     _, _, data = video_or_404(uid, video_id)
     body_ = body()
     level = body_.get("level")
@@ -713,6 +933,7 @@ def get_video_note(video_id, episode):
 @app.put("/api/videos/<video_id>/notes/<int:episode>")
 def put_video_note(video_id, episode):
     uid = current_user()
+    limit_saves(uid)
     video_or_404(uid, video_id)
     run("""INSERT INTO notes (user_id, topic_id, body) VALUES (?, ?, ?)
            ON CONFLICT (user_id, topic_id) DO UPDATE SET body = excluded.body, updated = CURRENT_TIMESTAMP""",
@@ -723,6 +944,7 @@ def put_video_note(video_id, episode):
 @app.post("/api/videos/<video_id>/retry")
 def retry_video(video_id):
     uid = current_user()
+    limit("retry", uid, 3, 3600, "You've retried a lot.")
     video_or_404(uid, video_id)
     row = one("SELECT status, source_file FROM videos WHERE id = ?", (video_id,))
     if not row or row["status"] != "failed":
@@ -732,6 +954,7 @@ def retry_video(video_id):
     path = UPLOADS / (row["source_file"] or "")
     if not path.is_file():
         abort(400, "The original file is gone. Upload it again.")
+    limit("ai", "site", 10, 86400, "Today's AI lesson limit for the site is used up.")
     run("UPDATE videos SET status = 'generating', message = 'Starting…' WHERE id = ?", (video_id,))
     start_generation(video_id, path)
     return jsonify(ok=True)
@@ -741,6 +964,7 @@ init_db()
 
 if __name__ == "__main__":
     print("CalcLearners running at http://localhost:5000")
+    app.config["SESSION_COOKIE_SECURE"] = False  # local runs are plain http://localhost
     # "stat" reloader: restart only when an already-loaded file is edited. The default
     # watchdog reloader also restarts when pypdf imports new modules mid-upload,
     # which kills the request.

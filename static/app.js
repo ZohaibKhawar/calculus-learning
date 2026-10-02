@@ -14,16 +14,10 @@ function store(key, value) {
   } catch (e) { return null; }
 }
 
-// Anonymous learner ID: no sign-up needed, the server keys your progress on it.
-const UID = (() => {
-  let id = store("uid");
-  if (!id) {
-    id = crypto.randomUUID ? crypto.randomUUID()
-      : Math.random().toString(36).slice(2) + Date.now().toString(36);
-    store("uid", id);
-  }
-  return id;
-})();
+// Your learner ID lives in a secure cookie the server sets (no sign-up needed).
+// Browsers from before that change kept their ID here; it's sent once so the server
+// can move it into the cookie, then forgotten.
+let LEGACY_UID = store("uid");
 
 const isJson = res => res.ok && (res.headers.get("content-type") || "").includes("json");
 
@@ -32,7 +26,7 @@ const isJson = res => res.ok && (res.headers.get("content-type") || "").includes
 // Live Server reloads the page every time server.py saves a file, which breaks
 // uploads and saving.
 async function loadLessons() {
-  if (location.port !== "5000") {
+  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) && location.port !== "5000") {
     try {
       if (isJson(await fetch("http://localhost:5000/api/lessons"))) {
         location.replace("http://localhost:5000/" + location.hash);
@@ -46,7 +40,8 @@ async function loadLessons() {
 }
 
 async function api(path, { method = "GET", body } = {}) {
-  const opts = { method, headers: { "X-User": UID } };
+  const opts = { method, credentials: "same-origin", headers: { "X-Requested-With": "CalcLearners" } };
+  if (LEGACY_UID) opts.headers["X-User"] = LEGACY_UID;
   if (body instanceof FormData) opts.body = body;
   else if (body !== undefined) {
     opts.body = JSON.stringify(body);
@@ -1616,6 +1611,8 @@ function startGraph() {
   try {
     const lessons = await loadLessons();
     const me = await api("/me");
+    // The server now holds our ID in its cookie, so the old copy can go.
+    if (LEGACY_UID) { try { localStorage.removeItem("uid"); } catch (e) { /* blocked */ } LEGACY_UID = null; }
     LESSONS = lessons;
     BY_ID = Object.fromEntries(lessons.map(l => [l.id, l]));
     ME = me;
