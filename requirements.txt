@@ -1,0 +1,5 @@
+flask>=3.0
+pypdf>=4.0
+# Optional: only needed to turn new PDFs into video lessons with Claude
+# (also set ANTHROPIC_API_KEY before starting the server).
+anthropic>=1.0

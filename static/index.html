@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CalcLearners - Calculus 1 to 3</title>
+  <script>
+    // Apply saved theme (or the system preference) before the page paints.
+    try {
+      document.documentElement.dataset.theme = localStorage.getItem("theme") ||
+        (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+    } catch (e) { document.documentElement.dataset.theme = "dark"; }
+  </script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#view">Skip to content</a>
+  <header>
+    <button class="brand" data-v="home">Calc<span>Learners</span></button>
+    <nav>
+      <button data-v="learn">Learn</button>
+      <button data-v="videos">Videos</button>
+      <button data-v="dashboard">My Progress</button>
+      <button data-v="formulas">Formulas</button>
+      <button data-v="forum">Q&amp;A Forum</button>
+      <button data-v="upload">Upload</button>
+      <button data-v="feedback">Feedback</button>
+      <button id="theme" role="switch" aria-checked="true" aria-label="Dark mode" title="Switch light / dark mode">
+        <svg class="ico sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <circle cx="12" cy="12" r="4" fill="currentColor"/>
+          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
+        </svg>
+        <svg class="ico moon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>
+        </svg>
+        <span class="knob"></span>
+      </button>
+    </nav>
+  </header>
+
+  <div id="banner" hidden>
+    Can't reach the CalcLearners server, so lessons and saving won't work.
+    In a terminal inside the <code>calculus website</code> folder, run <code>python server.py</code>, then refresh this page.
+  </div>
+
+  <!-- LANDING PAGE -->
+  <section id="landing">
+    <div class="hero">
+      <canvas id="pi"></canvas>
+      <h1 class="rise">CalcLearners</h1>
+      <p class="rise">Master Calculus 1 to 3. Skip straight to the exact topic you are stuck on.</p>
+      <div class="cta rise">
+        <button id="cta-main" data-v="learn">Start learning</button>
+        <button class="ghost" data-v="forum">Ask the community</button>
+      </div>
+    </div>
+
+    <!-- Scroll-driven tablet (the ContainerScroll effect, ported to plain JS in ipad.js).
+         As you scroll it tilts upright, then pins while touch swipes scroll the formula sheet. -->
+    <section class="ipad-scroll" id="ipad-scroll" aria-label="Preview: the CalcLearners formula sheet on a tablet">
+      <div class="ipad-sticky">
+        <div class="ipad-stage">
+          <div class="ipad-title">
+            <p>Every formula from Calc 1 to 3,</p>
+            <h2>right in your hands.</h2>
+          </div>
+          <div class="ipad-card" aria-hidden="true">
+            <div class="ipad-body">
+              <div class="ipad-cam"></div>
+              <div class="ipad-screen">
+                <div class="ipad-page">
+                  <div class="mp-header"><b>Calc<span>Learners</span></b>
+                    <nav><i>Learn</i><i>Videos</i><i>My Progress</i><i class="on">Formulas</i><i>Q&amp;A Forum</i><i>Upload</i></nav>
+                  </div>
+                  <div class="mp-body">
+                    <div class="mp-side"></div>
+                    <div class="mp-main"><div class="mp-scroll"></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Pencil and touch circle, drawn in the tablet's own 1000 x 700 coordinates -->
+            <svg class="ipad-hand" viewBox="0 0 1000 700">
+              <defs>
+                <linearGradient id="pencil-grad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#cfcfd4"/>
+                </linearGradient>
+              </defs>
+              <g class="pencil">
+                <rect x="300" y="-24" width="430" height="22" rx="11" fill="url(#pencil-grad)"/>
+                <rect x="300" y="-9" width="426" height="3" fill="#000" opacity="0.07"/>
+                <path d="M 304,-24 L 304,-2 L 258,-13 Z" fill="#ededf0"/>
+                <path d="M 258,-13 L 272,-17 L 272,-9 Z" fill="#7d7d84"/>
+              </g>
+              <circle class="ripple" cx="820" cy="520" r="30"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="section">
+      <div class="grid">
+        <div class="feat reveal"><div class="num">01</div><h3>Jump to any topic</h3>
+          <p>Search L'Hôpital's rule, series tests or Stokes' theorem and go straight there.</p></div>
+        <div class="feat reveal"><div class="num">02</div><h3>Step-by-step lessons</h3>
+          <p>Plain-language big ideas, worked examples revealed one step at a time, and common mistakes to avoid.</p></div>
+        <div class="feat reveal"><div class="num">03</div><h3>Practice &amp; quizzes</h3>
+          <p>Hints when you're stuck, instant feedback on every quiz question, and a progress tracker.</p></div>
+        <div class="feat reveal"><div class="num">04</div><h3>Community Q&amp;A</h3>
+          <p>Ask questions, upvote the best answers, and low-effort replies get filtered out.</p></div>
+        <div class="feat reveal"><div class="num">05</div><h3>One formula sheet</h3>
+          <p>Every key formula from your 12-week course in one searchable, printable page.</p></div>
+        <div class="feat reveal"><div class="num">06</div><h3>Notes → videos</h3>
+          <p>Upload your class notes and get short animated episodes with voiceover, then 18 questions from easy to expert.</p></div>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat reveal" data-count="12"><b>0</b><span>weeks</span></div>
+      <div class="stat reveal" data-count="42"><b>0</b><span>course topics</span></div>
+      <div class="stat reveal" data-count="157"><b>0</b><span>quiz questions</span></div>
+    </div>
+
+    <footer>CalcLearners - built for students who want calculus to click.</footer>
+  </section>
+
+  <!-- LEARNING APP -->
+  <div id="app" hidden>
+    <aside>
+      <input id="q" type="search" placeholder="Search topics… (press / )" aria-label="Search topics">
+      <div id="side"></div>
+    </aside>
+    <main>
+      <div id="view" tabindex="-1"></div>
+    </main>
+  </div>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.2/lib/anime.min.js"></script>
+  <script src="player.js"></script>
+  <script src="reader.js"></script>
+  <script src="ipad.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
