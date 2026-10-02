@@ -1409,6 +1409,7 @@ $$(".theme-toggle").forEach(b => b.addEventListener("click", () => {
   document.documentElement.dataset.theme = next;
   store("theme", next);
   syncTheme();
+  Auth.retheme();
 }));
 syncTheme();
 
@@ -1735,6 +1736,9 @@ const Auth = (() => {
     reset: f => ["/auth/reset", { code: f.code.value, password: f.password.value }]
   };
 
+  // Follow the site's light/dark switch, not the computer's setting.
+  const siteTheme = () => (document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+
   const token = () => (captcha !== null && window.turnstile ? turnstile.getResponse(captcha) || "" : "");
   const showError = msg => { const box = card.querySelector(".form-error"); if (box) box.textContent = msg; else toast(msg); };
 
@@ -1791,7 +1795,7 @@ const Auth = (() => {
       const slot = $("#google-slot");
       if (!slot) return;
       google.accounts.id.renderButton(slot, {
-        theme: document.documentElement.dataset.theme === "dark" ? "filled_black" : "outline",
+        theme: siteTheme() === "dark" ? "filled_black" : "outline",
         size: "large", shape: "rectangular", logo_alignment: "center",
         text: view === "signup" ? "signup_with" : "continue_with",
         width: Math.min(400, slot.clientWidth || 320)
@@ -1813,7 +1817,7 @@ const Auth = (() => {
     try {
       await loadScript("https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit");
       const slot = $("#captcha-slot");
-      if (slot) captcha = turnstile.render(slot, { sitekey: config.turnstile_site_key, theme: "auto", size: "flexible" });
+      if (slot) captcha = turnstile.render(slot, { sitekey: config.turnstile_site_key, theme: siteTheme(), size: "flexible" });
     } catch (e) { /* the server explains if the check is missing */ }
   }
 
@@ -1845,7 +1849,18 @@ const Auth = (() => {
     try { config = await api("/auth/config"); } catch (e) { /* the offline banner explains */ }
   }
 
-  return { show, loadConfig };
+  // Redraw Google's button and the bot check in the new colours when the theme changes.
+  function retheme() {
+    if (!document.body.classList.contains("signed-out")) return;
+    if ($("#google-slot") && googleReady) { $("#google-slot").replaceChildren(); showGoogle(); }
+    if ($("#captcha-slot") && captcha !== null && window.turnstile) {
+      turnstile.remove(captcha);
+      captcha = null;
+      showCaptcha();
+    }
+  }
+
+  return { show, loadConfig, retheme };
 })();
 
 // After signing in (or on load with a valid cookie): load your account and the course.

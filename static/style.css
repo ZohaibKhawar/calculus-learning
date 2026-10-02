@@ -580,10 +580,14 @@ body.signed-out .site-foot { margin-top: auto; }
 .auth-alt { margin: 16px 0 0; text-align: center; }
 .auth-switch { margin: 18px 0 0; padding-top: 18px; border-top: 1px solid var(--rule); text-align: center; }
 .auth-card button.link { font-size: inherit; }
-.google-slot { display: flex; justify-content: center; min-height: 44px; }
+/* Google's button and Cloudflare's check are iframes whose pages don't declare a
+   colour scheme. On our dark theme the browser would paint an opaque white box
+   behind them; matching their (light) scheme keeps the frame transparent. */
+.google-slot { display: flex; justify-content: center; min-height: 44px; color-scheme: light; }
+.captcha-slot { color-scheme: light; }
 .or { display: flex; align-items: center; gap: 12px; margin: 18px 0; color: var(--graphite); font-size: 14px; }
 .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
-.captcha-slot { min-height: 65px; margin: 4px 0 14px; }
+.captcha-slot { min-height: 65px; margin: 4px 0 14px; display: flex; justify-content: center; }
 
 .account-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
 .account-actions { margin-top: 14px; }
