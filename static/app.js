@@ -155,8 +155,24 @@ function units() {
   return [...byWeek.values()].sort((a, b) => a.week - b.week);
 }
 
-// "Week 3 · Derivatives" or "Extra topic".
-const unitLabel = l => l.unit === "Extra" ? "Extra topic" : `${l.unit} · ${l.unit_title}`;
+// "Week 3: Derivatives" or "Extra topic".
+const unitLabel = l => l.unit === "Extra" ? "Extra topic" : `${l.unit}: ${l.unit_title}`;
+
+// The 12-week course without the extra topics.
+const courseLessons = () => LESSONS.filter(l => l.unit !== "Extra");
+
+// Progress ring in the header: course lessons understood.
+function updateProgress() {
+  const course = courseLessons();
+  const done = course.filter(l => isDone(l.id)).length;
+  const C = 2 * Math.PI * 14;
+  const arc = $("#progress-arc");
+  arc.setAttribute("stroke-dasharray", `${course.length ? (C * done / course.length).toFixed(1) : 0} ${C.toFixed(1)}`);
+  arc.style.visibility = done ? "visible" : "hidden"; // a round cap would draw a dot at 0
+  $("#progress-text").textContent = course.length ? `${done} / ${course.length}` : "My progress";
+  $("#progress-link").setAttribute("aria-label", course.length
+    ? `My progress: ${done} of ${course.length} lessons understood` : "My progress");
+}
 
 // ---------- Sidebar ----------
 function renderSidebar() {
@@ -190,13 +206,67 @@ $("#q").addEventListener("keydown", e => {
   }
 });
 
+// Topic search: the big box on the home page, or the topics list everywhere else.
+function openSearch() {
+  if (!$("#landing").hidden) {
+    $("#find").focus();
+    $("#find").scrollIntoView({ block: "center" });
+    return;
+  }
+  openTopics(true);
+}
+
 // Press "/" anywhere to jump to topic search.
 document.addEventListener("keydown", e => {
   if (e.key !== "/" || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
   e.preventDefault();
-  if ($("#app").hidden) location.hash = "#/learn";
-  setTimeout(() => $("#q").focus(), 50);
+  openSearch();
 });
+$("#search-btn").addEventListener("click", openSearch);
+
+// ---------- Phone layout: menu and topics drawer ----------
+const isPhone = () => matchMedia("(max-width: 860px)").matches;
+const menuBtn = $("#menu-btn"), nav = $("#nav");
+
+function setMenu(open) {
+  nav.classList.toggle("open", open);
+  menuBtn.setAttribute("aria-expanded", open);
+  menuBtn.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+  document.body.classList.toggle("menu-open", open);
+}
+menuBtn.addEventListener("click", () => setMenu(!nav.classList.contains("open")));
+document.addEventListener("click", e => {
+  if (nav.classList.contains("open") && !e.target.closest("#nav, #menu-btn")) setMenu(false);
+});
+
+const topicsBtn = $("#topics-btn");
+function openTopics(focusSearch) {
+  if (!isPhone()) { $("#q").focus(); return; }
+  document.body.classList.add("topics-open");
+  $("#scrim").hidden = false;
+  topicsBtn.setAttribute("aria-expanded", "true");
+  $("#side a.t.on")?.scrollIntoView({ block: "center" });
+  // Wait for the drawer to become visible before moving focus into it.
+  requestAnimationFrame(() => (focusSearch ? $("#q") : $("#topics-close")).focus());
+}
+function closeTopics(restoreFocus) {
+  if (!document.body.classList.contains("topics-open")) return;
+  document.body.classList.remove("topics-open");
+  $("#scrim").hidden = true;
+  topicsBtn.setAttribute("aria-expanded", "false");
+  if (restoreFocus) topicsBtn.focus();
+}
+topicsBtn.addEventListener("click", () => openTopics(false));
+$("#topics-close").addEventListener("click", () => closeTopics(true));
+$("#scrim").addEventListener("click", () => closeTopics(true));
+
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if (nav.classList.contains("open")) { setMenu(false); menuBtn.focus(); }
+  closeTopics(true);
+});
+// Leaving phone width (rotating a tablet, resizing a window) closes both panels.
+matchMedia("(max-width: 860px)").addEventListener?.("change", () => { setMenu(false); closeTopics(false); });
 
 // ---------- Routing (#/view/arg?params) ----------
 function parseHash() {
@@ -226,25 +296,25 @@ async function route() {
   clearTimeout(pollTimer);
   $("#landing").hidden = !home;
   $("#app").hidden = home;
+  setMenu(false);
+  closeTopics(false);
   const navView = view === "watch" ? "videos" : view;
-  $$("header nav button[data-v]").forEach(b => {
-    b.classList.toggle("on", b.dataset.v === navView);
-    b.toggleAttribute("aria-current", b.dataset.v === navView);
+  $$("[data-nav]").forEach(a => {
+    if (a.dataset.nav === navView) a.setAttribute("aria-current", "page");
+    else a.removeAttribute("aria-current");
   });
   window.scrollTo(0, 0);
   if (home) {
-    window.dispatchEvent(new Event("resize")); // re-fit the pi canvas
+    renderLanding();
     return;
   }
   renderSidebar();
   const views = { learn, dashboard, formulas, forum, upload, feedback, videos: videosView, watch };
   await (views[view] || learn)(arg, params);
   math(V);
-  if (window.anime) {
-    anime({
-      targets: "#view > *", opacity: [0, 1], translateY: [14, 0],
-      delay: anime.stagger(40), duration: 450, easing: "easeOutQuad"
-    });
+  // A quick fade shows the page changed (skipped when motion is turned off).
+  if (window.anime && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    anime({ targets: "#view", opacity: [0, 1], duration: 220, easing: "easeOutQuad" });
   }
 }
 
@@ -297,7 +367,7 @@ async function learn(id) {
   ];
 
   V.innerHTML = `
-    <div class="crumbs">${esc(unitLabel(l))} · ${badge(l.level)} · about ${l.minutes} min</div>
+    <div class="crumbs"><span>${esc(unitLabel(l))}</span>${badge(l.level)}<span>About ${l.minutes} min</span></div>
     <h2>${esc(l.name)}</h2>
     <div class="row lesson-actions">
       <button id="done-btn"></button>
@@ -305,9 +375,9 @@ async function learn(id) {
     </div>
 
     ${l.prereqs.length ? `<div class="card prereq">
-      <b>Before you start:</b> this builds on
-      ${l.prereqs.map(p => `<a class="chip ${isDone(p) ? "done" : ""}" href="#/learn/${p}">${isDone(p) ? "✓ " : ""}${esc(BY_ID[p].name)}</a>`).join(" ")}.
-      ${l.prereqs.every(isDone) ? "You've covered these, nice." : "Shaky on any of them? Review those first. It makes this topic much easier."}
+      <b>Before you start:</b> this lesson builds on
+      <div class="chips">${l.prereqs.map(p => `<a class="chip ${isDone(p) ? "done" : ""}" href="#/learn/${p}">${isDone(p) ? "✓ " : ""}${esc(BY_ID[p].name)}</a>`).join(" ")}</div>
+      <p class="muted prereq-note">${l.prereqs.every(isDone) ? "You've covered these, nice." : "Shaky on any of them? Review those first. It makes this topic much easier."}</p>
     </div>` : ""}
 
     <nav class="jump" aria-label="Lesson sections">
@@ -378,8 +448,9 @@ async function learn(id) {
     </section>
 
     <div class="pager">
-      ${prev ? `<a href="#/learn/${prev.id}">← ${esc(prev.name)}</a>` : "<span></span>"}
-      ${next ? `<a href="#/learn/${next.id}">${esc(next.name)} →</a>` : `<a href="#/dashboard">See my progress →</a>`}
+      ${prev ? `<a class="prev" href="#/learn/${prev.id}"><small>Previous lesson</small>${esc(prev.name)}</a>` : ""}
+      ${next ? `<a class="next" href="#/learn/${next.id}"><small>Next lesson</small>${esc(next.name)}</a>`
+        : `<a class="next" href="#/dashboard"><small>You reached the end</small>See my progress</a>`}
     </div>`;
 
   // Mark as understood
@@ -450,6 +521,7 @@ async function setDone(id, done) {
   await api("/progress", { method: "POST", body: { topic: id, done } });
   ME.done = done ? [...new Set([...ME.done, id])] : ME.done.filter(t => t !== id);
   renderSidebar();
+  updateProgress();
 }
 
 function renderQuiz(l) {
@@ -540,8 +612,8 @@ function topicPicker() {
 // ---------- Dashboard ----------
 async function dashboard() {
   if (!LESSONS.length) return serverMissing();
-  try { await refreshMe(); } catch (e) { /* show what we have */ }
-  const course = LESSONS.filter(l => l.unit !== "Extra"); // the 12 weeks, without the extra topics
+  try { await refreshMe(); updateProgress(); } catch (e) { /* show what we have */ }
+  const course = courseLessons();
   const total = course.length;
   const quizTopics = Object.keys(ME.quiz).filter(t => BY_ID[t]);
   const avg = quizTopics.length
@@ -563,15 +635,15 @@ async function dashboard() {
 
     <div class="two">
       ${last ? `<div class="card">
-        <small>CONTINUE WHERE YOU LEFT OFF</small>
+        <small>Continue where you left off</small>
         <h3>${esc(last.name)}</h3>
-        <button data-v="learn/${last.id}">Resume →</button>
+        <button data-v="learn/${last.id}">Resume lesson</button>
       </div>` : ""}
       ${next ? `<div class="card">
-        <small>RECOMMENDED NEXT</small>
+        <small>Recommended next</small>
         <h3>${esc(next.name)}</h3>
         <p class="muted">${next.prereqs.length ? "You've done everything it builds on." : "A great place to start, with no prerequisites."}</p>
-        <button class="${last ? "ghost" : ""}" data-v="learn/${next.id}">Start →</button>
+        <button class="${last ? "ghost" : ""}" data-v="learn/${next.id}">Start lesson</button>
       </div>` : `<div class="card"><h3>You've finished every topic! 🎉</h3><p>Keep it fresh by retaking quizzes now and then.</p></div>`}
     </div>
 
@@ -617,6 +689,7 @@ async function dashboard() {
     await api("/reset", { method: "POST" });
     await refreshMe();
     renderSidebar();
+    updateProgress();
     dashboard();
     toast("Progress reset");
   };
@@ -1302,17 +1375,241 @@ async function feedback() {
 }
 
 // ---------- Theme (light / dark) ----------
-const themeBtn = $("#theme");
 function syncTheme() {
-  themeBtn.setAttribute("aria-checked", String(document.documentElement.dataset.theme !== "light"));
+  const dark = document.documentElement.dataset.theme === "dark";
+  const label = dark ? "Switch to light mode" : "Switch to dark mode";
+  $$(".theme-toggle").forEach(b => {
+    const text = b.querySelector(".theme-label");
+    if (text) text.textContent = label;
+    else b.setAttribute("aria-label", label);
+  });
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = dark ? "#0F1729" : "#F4F6F9";
 }
-themeBtn.onclick = () => {
-  const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+$$(".theme-toggle").forEach(b => b.addEventListener("click", () => {
+  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
   document.documentElement.dataset.theme = next;
   store("theme", next);
   syncTheme();
-};
+}));
 syncTheme();
+
+// ==================================================
+// HOME PAGE: hero graph, topic search, course map
+// ==================================================
+const CHEV = `<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
+const openWeeks = new Set();   // weeks the learner opened by hand
+let weeksTouched = false;      // until they do, the week they're on starts open
+
+// The big button: the last lesson visited if it isn't understood yet, otherwise the recommended next one.
+function heroLesson() {
+  const last = BY_ID[ME.last_topic];
+  if (last && !isDone(last.id)) return { lesson: last, resume: true };
+  const next = recommendNext();
+  return next ? { lesson: next, resume: false } : null;
+}
+
+function renderLanding() {
+  const cta = $("#cta-main"), note = $("#resume-note");
+  if (!LESSONS.length) {
+    cta.href = "#/learn";
+    cta.textContent = "Browse the course";
+    note.textContent = "No sign-up needed. Your progress saves in this browser.";
+    return;
+  }
+  const course = courseLessons();
+  const weekCount = new Set(course.map(l => l.week)).size;
+  $(".lede").textContent = `${course.length} short lessons across your ${weekCount}-week course, from precalc review to tangent planes. ` +
+    "Pick up where you stopped, or jump to the exact topic you're stuck on.";
+
+  const done = course.filter(l => isDone(l.id)).length;
+  const pick = heroLesson();
+  if (pick) {
+    const l = pick.lesson;
+    cta.href = "#/learn/" + l.id;
+    cta.innerHTML = `${pick.resume ? "Continue" : done ? "Up next" : "Start"}: ${esc(l.name)}
+      <small>${l.unit === "Extra" ? "Extra topic" : esc(l.unit)}</small>`;
+    note.innerHTML = done
+      ? `You've understood <b>${done} of ${course.length}</b> lessons. This one takes about ${l.minutes} minutes.`
+      : `No sign-up needed, and your progress saves in this browser. This lesson takes about ${l.minutes} minutes.`;
+  } else {
+    cta.href = "#/formulas";
+    cta.textContent = "Review the formula sheet";
+    note.innerHTML = `You've understood all <b>${course.length}</b> course lessons. Retake a quiz now and then to keep it fresh.`;
+  }
+  renderWeeks(pick?.lesson);
+}
+
+function renderWeeks(current) {
+  $("#weeks").innerHTML = units().map(u => {
+    const extra = u.label === "Extra topics";
+    const total = u.lessons.length;
+    const done = u.lessons.filter(l => isDone(l.id)).length;
+    const here = !!current && current.week === u.week;
+    const state = done === total ? "done" : here ? "current" : "";
+    const label = done === total ? "Done" : here ? "You're here" : done ? `${done} of ${total} done`
+      : extra ? "Optional" : "Not started";
+    const open = weeksTouched ? openWeeks.has(u.week) : here;
+    const lessons = u.lessons.map(l => {
+      const cls = isDone(l.id) ? "l-done" : current && l.id === current.id ? "l-next" : "";
+      const doneText = isDone(l.id) ? `<span class="sr-only"> (understood)</span>` : "";
+      const tag = cls === "l-next" ? `<span class="tag">Up next</span>` : "";
+      return `<li><a class="${cls}" href="#/learn/${l.id}"><span class="dot" aria-hidden="true"></span>${esc(l.name)}${doneText}${tag}</a></li>`;
+    }).join("");
+    return `<li class="week ${state} ${open ? "open" : ""}" data-week="${u.week}">
+      <button class="week-toggle" type="button" aria-expanded="${open}" aria-controls="wk-${u.week}">
+        <span class="w-num" aria-hidden="true">${extra ? "+" : String(u.week).padStart(2, "0")}</span>
+        <span class="w-title">${esc(u.title)}<span class="w-sub">${esc(u.label)}, ${plural(total, "lesson")}</span></span>
+        <span class="w-state">${label}</span>
+        ${CHEV}
+      </button>
+      <div class="week-lessons" id="wk-${u.week}"><ul>${lessons}</ul></div>
+    </li>`;
+  }).join("");
+}
+
+$("#weeks").addEventListener("click", e => {
+  const b = e.target.closest(".week-toggle");
+  if (!b) return;
+  if (!weeksTouched) {
+    weeksTouched = true;
+    $$("#weeks .week.open").forEach(w => openWeeks.add(+w.dataset.week));
+  }
+  const li = b.closest(".week");
+  const open = li.classList.toggle("open");
+  b.setAttribute("aria-expanded", open);
+  if (open) openWeeks.add(+li.dataset.week); else openWeeks.delete(+li.dataset.week);
+});
+
+// ---------- "What are you stuck on?" search ----------
+const findInput = $("#find"), findList = $("#find-results");
+
+function searchLessons(query) {
+  const q = query.trim().toLowerCase();
+  const words = q.split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  return LESSONS.map(l => {
+    const name = l.name.toLowerCase();
+    const hay = (l.name + " " + l.keywords + " " + l.unit_title).toLowerCase();
+    if (!words.every(w => hay.includes(w))) return null;
+    return { l, rank: name.startsWith(q) ? 0 : name.includes(q) ? 1 : 2 };
+  }).filter(Boolean).sort((a, b) => a.rank - b.rank).slice(0, 6).map(x => x.l);
+}
+
+function showResults() {
+  const q = findInput.value.trim();
+  if (!q) { findList.hidden = true; findList.innerHTML = ""; return; }
+  if (!LESSONS.length) {
+    findList.innerHTML = `<li class="none">Lessons load from the server. Start it with <code>python server.py</code>, then refresh.</li>`;
+  } else {
+    const hits = searchLessons(q);
+    findList.innerHTML = hits.length
+      ? hits.map(l => `<li><a href="#/learn/${l.id}">${esc(l.name)}<small>${esc(unitLabel(l))}</small></a></li>`).join("")
+      : `<li class="none">No lesson matches "${esc(q)}". Try a shorter word, like "limit", "integral" or "series".</li>`;
+  }
+  findList.hidden = false;
+}
+
+function goFirstResult() {
+  showResults();
+  const a = findList.querySelector("a");
+  if (a) location.hash = a.getAttribute("href");
+  else findInput.focus();
+}
+
+findInput.addEventListener("input", showResults);
+findInput.addEventListener("keydown", e => {
+  if (e.key === "Enter") { e.preventDefault(); goFirstResult(); }
+  if (e.key === "ArrowDown") {
+    const a = findList.querySelector("a");
+    if (a) { e.preventDefault(); a.focus(); }
+  }
+});
+findList.addEventListener("keydown", e => {
+  const links = [...findList.querySelectorAll("a")];
+  const i = links.indexOf(document.activeElement);
+  if (i < 0) return;
+  if (e.key === "ArrowDown") { e.preventDefault(); links[Math.min(i + 1, links.length - 1)].focus(); }
+  if (e.key === "ArrowUp") { e.preventDefault(); (i ? links[i - 1] : findInput).focus(); }
+});
+$("#find-go").addEventListener("click", goFirstResult);
+
+// ---------- Hero graph: a tangent line that follows your pointer ----------
+function startGraph() {
+  const svg = $("#graph");
+  const W = 640, H = 380, X0 = -1, X1 = 9, Y0 = -1.5, Y1 = 6;
+  const f = x => Math.sin(x) + x / 2, df = x => Math.cos(x) + 0.5;
+  const sx = x => (x - X0) / (X1 - X0) * W, sy = y => H - (y - Y0) / (Y1 - Y0) * H;
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, cls, attrs = {}) => {
+    const e = document.createElementNS(NS, tag);
+    e.setAttribute("class", cls);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    svg.appendChild(e);
+    return e;
+  };
+
+  for (let x = Math.ceil(X0); x <= X1; x++) el("line", "g-grid", { x1: sx(x), x2: sx(x), y1: 0, y2: H });
+  for (let y = Math.ceil(Y0); y <= Y1; y++) el("line", "g-grid", { x1: 0, x2: W, y1: sy(y), y2: sy(y) });
+  el("line", "g-axis", { x1: sx(0), x2: sx(0), y1: 0, y2: H });
+  el("line", "g-axis", { x1: 0, x2: W, y1: sy(0), y2: sy(0) });
+  let d = "";
+  for (let i = 0; i <= 400; i++) {
+    const x = X0 + (X1 - X0) * i / 400;
+    d += (i ? "L" : "M") + sx(x).toFixed(1) + " " + sy(f(x)).toFixed(1);
+  }
+  el("path", "g-curve", { d });
+  const rise = el("path", "g-rise");
+  const tan = el("line", "g-tan");
+  const dot = el("circle", "g-dot", { r: 7 });
+
+  const xv = $("#xv"), mv = $("#mv");
+  let cur = 2, touched = false;
+  function setX(x) {
+    cur = Math.max(X0 + 0.3, Math.min(X1 - 0.3, x));
+    const y = f(cur), m = df(cur), L = 1.6;
+    tan.setAttribute("x1", sx(cur - L)); tan.setAttribute("y1", sy(y - m * L));
+    tan.setAttribute("x2", sx(cur + L)); tan.setAttribute("y2", sy(y + m * L));
+    rise.setAttribute("d", `M${sx(cur)} ${sy(y)} H${sx(cur + 1)} V${sy(y + m)}`);
+    dot.setAttribute("cx", sx(cur)); dot.setAttribute("cy", sy(y));
+    xv.textContent = "x = " + cur.toFixed(2);
+    mv.textContent = (m < -0.005 ? "−" : "") + Math.abs(m).toFixed(2);
+  }
+  const fromEvent = e => {
+    const r = svg.getBoundingClientRect();
+    touched = true;
+    setX(X0 + (e.clientX - r.left) / r.width * (X1 - X0));
+  };
+  // Vertical swipes still scroll the page on phones (touch-action: pan-y); taps and sideways drags move the line.
+  svg.addEventListener("pointerdown", fromEvent);
+  svg.addEventListener("pointermove", e => { if (e.pointerType === "mouse" || e.pressure > 0) fromEvent(e); });
+  svg.addEventListener("keydown", e => {
+    const step = { ArrowRight: 0.1, ArrowUp: 0.1, ArrowLeft: -0.1, ArrowDown: -0.1 }[e.key];
+    if (step === undefined) return;
+    e.preventDefault();
+    touched = true;
+    setX(cur + step);
+  });
+  if (matchMedia("(pointer: coarse)").matches) $("#graph-hint").textContent = "Tap or drag along the graph";
+
+  if (window.katex) {
+    try {
+      katex.render("f(x) = \\sin x + \\tfrac{x}{2}", $("#fx-label"), { throwOnError: false });
+      katex.render("\\tfrac{d}{dx}f(g(x)) = f'(g(x))\\,g'(x)", $("#tool-formula"), { throwOnError: false });
+    } catch (e) { /* the plain-text versions stay */ }
+  }
+
+  // The one orchestrated moment: on load the tangent rides along the curve once.
+  if ($("#landing").hidden || matchMedia("(prefers-reduced-motion: reduce)").matches) { setX(2); return; }
+  const t0 = performance.now(), dur = 2600;
+  (function step(t) {
+    if (touched) return;
+    const p = Math.min(1, (t - t0) / dur), ease = 1 - Math.pow(1 - p, 3);
+    setX(ease * 6.6);
+    if (p < 1) requestAnimationFrame(step);
+  })(t0);
+}
 
 // ---------- Start ----------
 (async function init() {
@@ -1322,160 +1619,8 @@ syncTheme();
     LESSONS = lessons;
     BY_ID = Object.fromEntries(lessons.map(l => [l.id, l]));
     ME = me;
-    window.IpadHero?.fill(LESSONS); // real formulas on the landing page tablet
-    const last = BY_ID[ME.last_topic];
-    if (last) {
-      $("#cta-main").textContent = "Continue: " + last.name;
-      $("#cta-main").dataset.v = "learn/" + last.id;
-    }
   } catch (e) { offline(); }
+  updateProgress();
   route();
-})();
-
-
-// ==================================================
-// LANDING PAGE: spinning pi + anime.js animations
-// ==================================================
-(function () {
-  const DIGITS = "31415926535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679";
-  const cvs = document.getElementById("pi");
-  const ctx = cvs.getContext("2d");
-  const state = { form: 0, angle: 0.5 }; // form: 0 = scattered digits, 1 = pi shape
-  let W = 0, H = 0, size = 0, step = 10, pts = [];
-
-  function build() {
-    W = cvs.clientWidth;
-    H = cvs.clientHeight;
-    if (!W || !H) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    cvs.width = W * dpr;
-    cvs.height = H * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    // Draw a big pi symbol offscreen, then sample it on a grid.
-    size = Math.min(H * 1.7, W * 1.35);
-    const off = document.createElement("canvas");
-    off.width = W;
-    off.height = H;
-    const o = off.getContext("2d");
-    o.font = "bold " + size + "px Georgia, 'Times New Roman', serif";
-    o.textAlign = "center";
-    o.textBaseline = "middle";
-    o.fillText("\u03c0", W / 2, H / 2);
-    const data = o.getImageData(0, 0, W, H).data;
-
-    step = Math.max(7, Math.round(size / 75));
-    const raw = [];
-    for (let y = 0; y < H; y += step) {
-      for (let x = 0; x < W; x += step) {
-        if (data[(y * W + x) * 4 + 3] > 128) raw.push([x, y]);
-      }
-    }
-    if (!raw.length) return;
-
-    // Re-center the shape.
-    const xs = raw.map(p => p[0]), ys = raw.map(p => p[1]);
-    const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
-    const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
-
-    // Two layers (front and back) give the symbol thickness when it spins.
-    const depth = step * 2.2;
-    pts = [];
-    let n = 0;
-    for (const [x, y] of raw) {
-      for (const z of [-depth, depth]) {
-        pts.push({
-          ch: DIGITS[n++ % DIGITS.length],
-          x: x - cx, y: y - cy, z: z,
-          sx: (Math.random() - 0.5) * W * 1.6,
-          sy: (Math.random() - 0.5) * H * 1.6,
-          sz: (Math.random() - 0.5) * 900
-        });
-      }
-    }
-  }
-
-  function draw() {
-    requestAnimationFrame(draw);
-    if (!pts.length || cvs.offsetParent === null) return; // skip while hidden
-    state.angle += 0.004; // slow spin
-    ctx.clearRect(0, 0, W, H);
-    // Digits are white on the dark theme and black on the light theme.
-    const ink = document.documentElement.dataset.theme === "light" ? "0,0,0" : "255,255,255";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-
-    const cos = Math.cos(state.angle), sin = Math.sin(state.angle);
-    const f = state.form, e = f * f * (3 - 2 * f); // smoothstep
-
-    for (const p of pts) {
-      const x = p.sx + (p.x - p.sx) * e;
-      const y = p.sy + (p.y - p.sy) * e;
-      const z = p.sz + (p.z - p.sz) * e;
-      const rx = x * cos + z * sin;       // rotate around the Y axis
-      const rz = -x * sin + z * cos;
-      const s = 900 / (900 + rz);         // perspective
-      const a = Math.max(0.12, Math.min(1, 0.6 - rz / (size * 0.7)));
-      ctx.fillStyle = "rgba(" + ink + "," + a.toFixed(2) + ")";
-      ctx.font = Math.max(5, step * s) + "px ui-monospace, Consolas, monospace";
-      ctx.fillText(p.ch, W / 2 + rx * s, H / 2 + y * s);
-    }
-  }
-
-  let timer;
-  window.addEventListener("resize", () => {
-    clearTimeout(timer);
-    timer = setTimeout(build, 150);
-  });
-  build();
-  draw();
-
-  // ---------- Intro animation (anime.js) ----------
-  const rise = document.querySelectorAll(".rise");
-  if (window.anime) {
-    anime.timeline({ easing: "easeOutExpo" })
-      .add({ targets: state, form: 1, duration: 3400 })
-      .add({
-        targets: ".rise", opacity: [0, 1], translateY: [24, 0],
-        delay: anime.stagger(140), duration: 900
-      }, "-=1800");
-  } else {
-    state.form = 1;
-    rise.forEach(el => (el.style.opacity = 1));
-  }
-
-  // ---------- Scroll reveal + counters ----------
-  function count(el, to) {
-    if (!window.anime) { el.textContent = to; return; }
-    const o = { v: 0 };
-    anime({
-      targets: o, v: to, round: 1, duration: 1400, easing: "easeOutExpo",
-      update: () => (el.textContent = o.v)
-    });
-  }
-
-  const io = new IntersectionObserver(entries => {
-    entries.forEach(en => {
-      if (!en.isIntersecting) return;
-      io.unobserve(en.target);
-      if (window.anime) {
-        anime({ targets: en.target, opacity: [0, 1], translateY: [30, 0], duration: 800, easing: "easeOutCubic" });
-      } else {
-        en.target.style.opacity = 1;
-      }
-      if (en.target.dataset.count) count(en.target.querySelector("b"), +en.target.dataset.count);
-    });
-  }, { threshold: 0.3 });
-  document.querySelectorAll(".reveal").forEach(el => io.observe(el));
-
-  // ---------- 3D tilt on feature cards ----------
-  document.querySelectorAll(".feat").forEach(el => {
-    el.addEventListener("mousemove", ev => {
-      const r = el.getBoundingClientRect();
-      const px = (ev.clientX - r.left) / r.width - 0.5;
-      const py = (ev.clientY - r.top) / r.height - 0.5;
-      el.style.transform = "rotateY(" + px * 14 + "deg) rotateX(" + -py * 14 + "deg) translateZ(8px)";
-    });
-    el.addEventListener("mouseleave", () => (el.style.transform = ""));
-  });
+  startGraph();
 })();
