@@ -3,3 +3,4 @@ calclearners.db
 uploads/
 __pycache__/
 secret_key
+secrets.env

@@ -25,6 +25,7 @@ from flask import Flask, abort, g, jsonify, redirect, request, send_from_directo
 from werkzeug.exceptions import HTTPException, TooManyRequests
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+import accounts
 import video_ai
 import videos
 from lessons import LESSON_IDS, LESSONS
@@ -142,6 +143,14 @@ CREATE TABLE IF NOT EXISTS videos (  -- AI-made lessons (hand-written ones live 
     source_hash TEXT,
     created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS email_codes (  -- sign-up verification and password reset
+    user_id TEXT NOT NULL,
+    purpose TEXT NOT NULL,       -- verify | reset
+    digest TEXT NOT NULL,        -- HMAC of the 6-digit code, never the code itself
+    expires INTEGER NOT NULL,
+    tries INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, purpose)
+);
 CREATE TABLE IF NOT EXISTS rate_limits (
     key TEXT PRIMARY KEY,        -- rule:who:window length
     window INTEGER NOT NULL,     -- start of the current window (unix seconds)
@@ -197,6 +206,17 @@ def init_db():
         # Databases made before videos existed lack this column.
         if "video_id" not in [r[1] for r in conn.execute("PRAGMA table_info(uploads)")]:
             conn.execute("ALTER TABLE uploads ADD COLUMN video_id TEXT")
+        # Sign-in columns. A users row starts as an anonymous visitor (older versions)
+        # and becomes an account once it has a username or a Google login.
+        have = [r[1] for r in conn.execute("PRAGMA table_info(users)")]
+        for column, kind in [("username", "TEXT"), ("email", "TEXT"), ("password_hash", "TEXT"),
+                             ("google_sub", "TEXT"), ("active", "INTEGER NOT NULL DEFAULT 0"),
+                             ("session_ver", "INTEGER NOT NULL DEFAULT 0"), ("blocked", "INTEGER NOT NULL DEFAULT 0")]:
+            if column not in have:
+                conn.execute(f"ALTER TABLE users ADD COLUMN {column} {kind}")  # fixed names from this list
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_username ON users(username)")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email)")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_google ON users(google_sub)")
         # A restart kills any lesson that was still being generated.
         conn.execute("UPDATE videos SET status = 'failed', message = ? WHERE status = 'generating'",
                      ("The server restarted while building this lesson. Press Retry.",))
@@ -241,28 +261,57 @@ def limit(rule, who, max_hits, seconds, message="You're doing that too often."):
 
 
 # ---------- Identity ----------
-# Before cookies, the browser made its own ID and sent it as X-User. A browser that
-# still has one of those (36-char UUID or similar) can claim it once, so nobody loses
-# their progress; brand-new IDs are only ever made here, and are rate limited per IP.
-LEGACY_ID_RE = re.compile(r"^[A-Za-z0-9-]{16,64}$")
+# Everyone signs in. The signed, HttpOnly cookie holds the account ID plus the
+# account's session version: bumping that version (password reset, block) signs
+# out every other device at once.
+def account(uid):
+    return one("""SELECT id, name, username, email, google_sub, active, blocked, session_ver
+                  FROM users WHERE id = ?""", (uid,)) if uid else None
+
+
+def is_account(u):
+    return bool(u and (u["username"] or u["google_sub"]))
 
 
 def current_user():
-    """Return the caller's ID from their signed cookie, issuing a new one if needed."""
-    uid = session.get("uid")
-    if uid and one("SELECT 1 FROM users WHERE id = ?", (uid,)):
-        return uid
-    legacy = request.headers.get("X-User", "")
-    if LEGACY_ID_RE.match(legacy) and one("SELECT 1 FROM users WHERE id = ?", (legacy,)):
-        uid = legacy
-    else:
-        limit("new-id", client_ip(), 30, 3600, "Too many new visitors from your network.")
-        limit("new-id", client_ip(), 200, 86400, "Too many new visitors from your network.")
-        uid = secrets.token_urlsafe(24)
-        run("INSERT INTO users (id) VALUES (?)", (uid,))
+    """Return the signed-in account's ID, or answer 401 so the page shows the sign-in screen."""
+    u = account(session.get("uid"))
+    if not is_account(u) or not u["active"] or session.get("ver") != u["session_ver"]:
+        abort(401, "Please sign in.")
+    if u["blocked"]:
+        session.clear()
+        abort(403, "This account has been blocked.")
+    return u["id"]
+
+
+def is_admin(uid):
+    u = account(uid)
+    return bool(u and u["username"] and u["username"] in accounts.ADMIN_USERS)
+
+
+def sign_in(uid):
+    """Start a fresh session for this account (a new cookie, so an old one can't be reused)."""
+    ver = one("SELECT session_ver FROM users WHERE id = ?", (uid,))["session_ver"]
+    session.clear()
     session.permanent = True
     session["uid"] = uid
-    return uid
+    session["ver"] = ver
+
+
+# Before accounts, each browser had an anonymous ID with its own progress: first in
+# localStorage (sent as X-User), later in this same cookie. When that browser creates
+# an account, the account takes over the anonymous row so the progress carries over.
+LEGACY_ID_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
+
+
+def previous_visitor():
+    """The anonymous visitor ID this browser used before signing up, if it has one."""
+    for uid in (session.get("uid"), request.headers.get("X-User", "")):
+        if uid and LEGACY_ID_RE.match(uid):
+            u = account(uid)
+            if u and not is_account(u):
+                return uid
+    return None
 
 
 # ---------- Request guards & security headers ----------
@@ -287,11 +336,13 @@ def guard_api():
 
 CSP = "; ".join([
     "default-src 'self'",
-    "script-src 'self' https://cdn.jsdelivr.net",
-    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
+    # Google sign-in and Cloudflare's bot check load their own scripts and frames.
+    "script-src 'self' https://cdn.jsdelivr.net https://accounts.google.com/gsi/client https://challenges.cloudflare.com",
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com https://accounts.google.com/gsi/style",
     "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net",
-    "img-src 'self' data:",
-    "connect-src 'self' http://localhost:5000",
+    "img-src 'self' data: https://*.googleusercontent.com",
+    "frame-src https://accounts.google.com https://challenges.cloudflare.com",
+    "connect-src 'self' http://localhost:5000 https://accounts.google.com/gsi/",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -306,7 +357,7 @@ def security_headers(resp):
     resp.headers["X-Frame-Options"] = "DENY"
     resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     resp.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
-    resp.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    resp.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"  # Google's sign-in popup
     if request.is_secure:
         resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     if request.path.startswith("/api/"):
@@ -353,7 +404,7 @@ def allow_local_probe(resp):
     """Let a copy of the page opened another way (e.g. VS Code Live Server) detect
     that server.py is running, so it can switch over to http://localhost:5000."""
     origin = request.headers.get("Origin", "")
-    if request.path == "/api/lessons" and LOCAL_ORIGIN.match(origin):
+    if request.path == "/api/auth/config" and LOCAL_ORIGIN.match(origin):
         resp.headers["Access-Control-Allow-Origin"] = origin
         resp.headers["Vary"] = "Origin"
     return resp
@@ -398,9 +449,214 @@ def index():
     return send_from_directory(app.static_folder, "index.html")
 
 
+# ---------- Accounts ----------
+def send_code(uid, email, purpose):
+    """Email a fresh 6-digit code (replacing any earlier one for the same purpose)."""
+    code = accounts.new_code()
+    run("""INSERT INTO email_codes (user_id, purpose, digest, expires, tries) VALUES (?, ?, ?, ?, 0)
+           ON CONFLICT (user_id, purpose) DO UPDATE
+           SET digest = excluded.digest, expires = excluded.expires, tries = 0""",
+        (uid, purpose, accounts.code_digest(code, app.secret_key), int(time.time()) + accounts.CODE_TTL))
+    limit("email-ip", client_ip(), 20, 86400, "Lots of emails are going to your network today.")
+    subject, text = accounts.code_email(code, purpose)
+    try:
+        accounts.send_email(email, subject, text)
+    except Exception:
+        app.logger.exception("Sending email failed")
+        abort(502, "We couldn't send the email just now. Please try again in a minute.")
+
+
+def check_code(uid, purpose, code):
+    row = one("SELECT digest, expires, tries FROM email_codes WHERE user_id = ? AND purpose = ?", (uid, purpose))
+    if not row or row["expires"] < time.time():
+        abort(400, "That code has expired. Ask for a new one.")
+    if row["tries"] >= accounts.CODE_TRIES:
+        abort(400, "That code was entered wrong too many times. Ask for a new one.")
+    if not accounts.same_digest(row["digest"], accounts.code_digest(str(code).strip(), app.secret_key)):
+        run("UPDATE email_codes SET tries = tries + 1 WHERE user_id = ? AND purpose = ?", (uid, purpose))
+        abort(400, "That code isn't right. Check the email and try again.")
+    run("DELETE FROM email_codes WHERE user_id = ? AND purpose = ?", (uid, purpose))
+
+
+def require_human():
+    if not accounts.turnstile_ok(str(body().get("turnstile", "")), client_ip()):
+        abort(400, "Please complete the check that you're not a robot, then try again.")
+
+
+def release_unfinished(uid):
+    """An unverified sign-up doesn't get to hold on to a username or email."""
+    run("UPDATE users SET username = NULL, email = NULL, password_hash = NULL WHERE id = ? AND active = 0", (uid,))
+
+
+def login_name(data):
+    return str(data.get("login", "")).strip().lower()[:200]
+
+
+@app.get("/api/auth/config")
+def auth_config():
+    """What the sign-in page needs to show (all public values)."""
+    return jsonify(google_client_id=accounts.GOOGLE_CLIENT_ID,
+                   turnstile_site_key=accounts.TURNSTILE_SITE_KEY,
+                   email_ready=accounts.email_ready())
+
+
+@app.post("/api/auth/signup")
+def signup():
+    limit("signup", client_ip(), 5, 3600, "Lots of sign-ups are coming from your network.")
+    limit("signup", client_ip(), 20, 86400, "Lots of sign-ups are coming from your network.")
+    data = body()
+    username = str(data.get("username", "")).strip().lower()
+    email = str(data.get("email", "")).strip().lower()
+    password = str(data.get("password", ""))
+    for problem in (accounts.username_problem(username), accounts.email_problem(email),
+                    accounts.password_problem(password, username, email)):
+        if problem:
+            abort(400, problem)
+    if not accounts.email_ready():
+        abort(503, "Email sign-up isn't switched on yet. Use Continue with Google.")
+    require_human()
+    taken = one("SELECT id, active FROM users WHERE username = ?", (username,))
+    if taken and taken["active"]:
+        abort(409, "That username is taken. Try another one.")
+    existing = one("SELECT id, active FROM users WHERE email = ?", (email,))
+    if existing and existing["active"]:
+        abort(409, "That email already has an account. Sign in, or reset your password.")
+    for stale in {r["id"] for r in (taken, existing) if r}:
+        release_unfinished(stale)
+
+    uid = previous_visitor() or secrets.token_urlsafe(24)
+    run("INSERT OR IGNORE INTO users (id) VALUES (?)", (uid,))
+    run("""UPDATE users SET username = ?, email = ?, password_hash = ?, active = 0,
+                            name = CASE WHEN name = '' THEN ? ELSE name END
+           WHERE id = ?""", (username, email, accounts.hash_password(password), username, uid))
+    session["pending"] = uid
+    send_code(uid, email, "verify")
+    return jsonify(next="verify", email=accounts.mask_email(email))
+
+
+@app.post("/api/auth/verify")
+def verify_email():
+    limit("code", client_ip(), 30, 3600, "Too many code attempts from your network.")
+    uid = session.get("pending")
+    u = account(uid)
+    if not u or not u["email"] or u["active"]:
+        abort(400, "Start by creating an account.")
+    check_code(uid, "verify", body().get("code", ""))
+    run("UPDATE users SET active = 1 WHERE id = ?", (uid,))
+    sign_in(uid)
+    return jsonify(ok=True)
+
+
+@app.post("/api/auth/resend")
+def resend_code():
+    uid = session.get("pending")
+    u = account(uid)
+    if not u or not u["email"] or u["active"]:
+        abort(400, "There's no sign-up waiting for a code.")
+    limit("resend", uid, 3, 3600, "We've sent several codes already.")
+    send_code(uid, u["email"], "verify")
+    return jsonify(email=accounts.mask_email(u["email"]))
+
+
+@app.post("/api/auth/login")
+def login():
+    data = body()
+    who = login_name(data)
+    password = str(data.get("password", ""))[:200]
+    limit("login-ip", client_ip(), 20, 600, "Too many sign-in attempts from your network.")
+    # Tight per account *and* network, so a stranger guessing wrong can't lock you out;
+    # a looser cap per account stops slow guessing spread over many networks.
+    limit("login", f"{who or '-'}|{client_ip()}", 10, 900, "Too many sign-in attempts for this account.")
+    limit("login-acct", who or "-", 100, 3600, "Too many sign-in attempts for this account.")
+    u = one("""SELECT id, email, password_hash, active, blocked FROM users
+               WHERE username = ? OR email = ?""", (who, who)) if who else None
+    # Always run one password check, so unknown names take as long as wrong passwords.
+    ok = accounts.check_password((u and u["password_hash"]) or accounts.DUMMY_HASH, password)
+    if not (u and u["password_hash"] and ok):
+        abort(400, "That username, email or password isn't right.")
+    if u["blocked"]:
+        abort(403, "This account has been blocked.")
+    if not u["active"]:  # signed up but never entered the code: send a fresh one
+        session["pending"] = u["id"]
+        limit("resend", u["id"], 3, 3600, "We've sent several codes already.")
+        send_code(u["id"], u["email"], "verify")
+        return jsonify(next="verify", email=accounts.mask_email(u["email"]))
+    sign_in(u["id"])
+    return jsonify(ok=True)
+
+
+@app.post("/api/auth/google")
+def google_login():
+    limit("google", client_ip(), 30, 3600, "Too many sign-in attempts from your network.")
+    info = accounts.google_identity(str(body().get("credential", "")))
+    if not info:
+        abort(400, "Google sign-in didn't work. Please try again.")
+    u = one("SELECT id, blocked FROM users WHERE google_sub = ?", (info["sub"],))
+    if not u:
+        same_email = one("SELECT id, active, blocked FROM users WHERE email = ?", (info["email"],))
+        if same_email and same_email["active"]:
+            # Google has verified this address, and so did our emailed code: same person.
+            run("UPDATE users SET google_sub = ? WHERE id = ?", (info["sub"], same_email["id"]))
+            u = same_email
+        else:
+            if same_email:
+                release_unfinished(same_email["id"])
+            uid = previous_visitor() or secrets.token_urlsafe(24)
+            run("INSERT OR IGNORE INTO users (id) VALUES (?)", (uid,))
+            run("""UPDATE users SET google_sub = ?, email = ?, active = 1,
+                                    name = CASE WHEN name = '' THEN ? ELSE name END
+                   WHERE id = ?""", (info["sub"], info["email"], info["name"] or "Learner", uid))
+            u = {"id": uid, "blocked": 0}
+    if u["blocked"]:
+        abort(403, "This account has been blocked.")
+    sign_in(u["id"])
+    return jsonify(ok=True)
+
+
+@app.post("/api/auth/forgot")
+def forgot_password():
+    limit("forgot", client_ip(), 5, 3600, "Too many reset requests from your network.")
+    require_human()
+    who = login_name(body())
+    u = one("""SELECT id, email FROM users WHERE (username = ? OR email = ?)
+               AND active = 1 AND blocked = 0 AND email IS NOT NULL""", (who, who)) if who else None
+    session["reset"] = u["id"] if u else None
+    if u:
+        limit("forgot", u["id"], 3, 3600, "We've sent several reset codes already.")
+        send_code(u["id"], u["email"], "reset")
+    # Same answer either way, so this can't be used to find out who has an account.
+    return jsonify(next="reset")
+
+
+@app.post("/api/auth/reset")
+def reset_password():
+    limit("code", client_ip(), 30, 3600, "Too many code attempts from your network.")
+    data = body()
+    u = account(session.get("reset"))
+    if not u:
+        abort(400, "That code isn't right. Check the email and try again.")
+    password = str(data.get("password", ""))
+    problem = accounts.password_problem(password, u["username"] or "", u["email"] or "")
+    if problem:
+        abort(400, problem)
+    check_code(u["id"], "reset", data.get("code", ""))
+    # New password, and every other device that was signed in gets signed out.
+    run("UPDATE users SET password_hash = ?, session_ver = session_ver + 1 WHERE id = ?",
+        (accounts.hash_password(password), u["id"]))
+    sign_in(u["id"])
+    return jsonify(ok=True)
+
+
+@app.post("/api/auth/logout")
+def logout():
+    session.clear()
+    return jsonify(ok=True)
+
+
 # ---------- Lessons ----------
 @app.get("/api/lessons")
 def lessons():
+    current_user()
     return jsonify(LESSONS)
 
 
@@ -408,7 +664,7 @@ def lessons():
 @app.get("/api/me")
 def me():
     uid = current_user()
-    user = one("SELECT name, last_topic FROM users WHERE id = ?", (uid,))
+    user = one("SELECT name, last_topic, username, email, google_sub FROM users WHERE id = ?", (uid,))
     # Only report topics that still exist (lessons get reorganized over time).
     quiz = {}
     for r in rows("""SELECT topic_id, score, total FROM quiz_scores
@@ -422,6 +678,10 @@ def me():
         q["attempts"] += 1
     return jsonify(
         name=user["name"],
+        username=user["username"],
+        email=user["email"],
+        google=bool(user["google_sub"]),
+        admin=is_admin(uid),
         last_topic=user["last_topic"] if user["last_topic"] in LESSON_IDS else None,
         done=[r["topic_id"] for r in rows("SELECT topic_id FROM progress WHERE user_id = ?", (uid,))
               if r["topic_id"] in LESSON_IDS],
@@ -598,11 +858,51 @@ def delete_question(qid):
     uid = current_user()
     limit("delete", uid, 30, 3600)
     q = one("SELECT user_id FROM questions WHERE id = ?", (qid,)) or abort(404, "Question not found.")
-    if q["user_id"] != uid:
+    if q["user_id"] != uid and not is_admin(uid):
         abort(403, "You can only delete your own questions.")
     run("DELETE FROM votes WHERE kind = 'a' AND target_id IN (SELECT id FROM answers WHERE question_id = ?)", (qid,))
     run("DELETE FROM votes WHERE kind = 'q' AND target_id = ?", (qid,))
     run("DELETE FROM questions WHERE id = ?", (qid,))
+    return jsonify(ok=True)
+
+
+@app.delete("/api/answers/<int:aid>")
+def delete_answer(aid):
+    uid = current_user()
+    limit("delete", uid, 30, 3600)
+    a = one("SELECT user_id FROM answers WHERE id = ?", (aid,)) or abort(404, "Answer not found.")
+    if a["user_id"] != uid and not is_admin(uid):
+        abort(403, "You can only delete your own answers.")
+    run("DELETE FROM votes WHERE kind = 'a' AND target_id = ?", (aid,))
+    run("DELETE FROM answers WHERE id = ?", (aid,))
+    return jsonify(ok=True)
+
+
+@app.post("/api/admin/block")
+def block_author():
+    """Admins: block the author of a post and remove everything they posted."""
+    uid = current_user()
+    if not is_admin(uid):
+        abort(403, "Only admins can block accounts.")
+    data = body()
+    owner_sql = {"q": "SELECT user_id FROM questions WHERE id = ?",
+                 "a": "SELECT user_id FROM answers WHERE id = ?"}.get(data.get("kind")) or abort(400, "Unknown post.")
+    try:
+        target = int(data.get("id"))
+    except (TypeError, ValueError):
+        abort(400, "Unknown post.")
+    author = (one(owner_sql, (target,)) or abort(404, "Post not found."))["user_id"]
+    if author == uid:
+        abort(400, "You can't block yourself.")
+    run("UPDATE users SET blocked = 1, session_ver = session_ver + 1 WHERE id = ?", (author,))
+    for sql in ("DELETE FROM votes WHERE kind = 'a' AND target_id IN (SELECT id FROM answers WHERE user_id = ?)",
+                """DELETE FROM votes WHERE kind = 'a' AND target_id IN
+                   (SELECT a.id FROM answers a JOIN questions q ON q.id = a.question_id WHERE q.user_id = ?)""",
+                "DELETE FROM votes WHERE kind = 'q' AND target_id IN (SELECT id FROM questions WHERE user_id = ?)",
+                "DELETE FROM votes WHERE user_id = ?",
+                "DELETE FROM answers WHERE user_id = ?",
+                "DELETE FROM questions WHERE user_id = ?"):
+        run(sql, (author,))
     return jsonify(ok=True)
 
 
@@ -965,6 +1265,7 @@ init_db()
 if __name__ == "__main__":
     print("CalcLearners running at http://localhost:5000")
     app.config["SESSION_COOKIE_SECURE"] = False  # local runs are plain http://localhost
+    accounts.DEV = True  # without email settings, sign-up codes are printed here instead of sent
     # "stat" reloader: restart only when an already-loaded file is edited. The default
     # watchdog reloader also restarts when pypdf imports new modules mid-upload,
     # which kills the request.

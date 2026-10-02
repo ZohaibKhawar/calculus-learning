@@ -14,9 +14,9 @@ function store(key, value) {
   } catch (e) { return null; }
 }
 
-// Your learner ID lives in a secure cookie the server sets (no sign-up needed).
-// Browsers from before that change kept their ID here; it's sent once so the server
-// can move it into the cookie, then forgotten.
+// You sign in to an account; the server keeps it in a secure cookie. Browsers from
+// before accounts kept an anonymous ID here, sent along until you sign up so your
+// earlier progress moves into the new account.
 let LEGACY_UID = store("uid");
 
 const isJson = res => res.ok && (res.headers.get("content-type") || "").includes("json");
@@ -25,18 +25,18 @@ const isJson = res => res.ok && (res.headers.get("content-type") || "").includes
 // Live Server on port 5500) and server.py is running, switch to server.py's address:
 // Live Server reloads the page every time server.py saves a file, which breaks
 // uploads and saving.
-async function loadLessons() {
-  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) && location.port !== "5000") {
-    try {
-      if (isJson(await fetch("http://localhost:5000/api/lessons"))) {
-        location.replace("http://localhost:5000/" + location.hash);
-        return new Promise(() => {}); // the browser is navigating away
-      }
-    } catch (e) { /* server.py isn't running */ }
-  }
-  const res = await fetch("/api/lessons").catch(() => null);
-  if (res && isJson(res)) return res.json();
-  throw new Error("Can't reach the server.");
+async function useLocalServer() {
+  if (!/^(localhost|127\.0\.0\.1)$/.test(location.hostname) || location.port === "5000") return;
+  try {
+    if (isJson(await fetch("http://localhost:5000/api/auth/config"))) {
+      location.replace("http://localhost:5000/" + location.hash);
+      await new Promise(() => {}); // the browser is navigating away
+    }
+  } catch (e) { /* server.py isn't running */ }
+}
+
+class ApiError extends Error {
+  constructor(message, status) { super(message); this.status = status; }
 }
 
 async function api(path, { method = "GET", body } = {}) {
@@ -49,9 +49,14 @@ async function api(path, { method = "GET", body } = {}) {
   }
   let res;
   try { res = await fetch("/api" + path, opts); }
-  catch (e) { offline(); throw new Error("Can't reach the server."); }
+  catch (e) { offline(); throw new ApiError("Can't reach the server.", 0); }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || "Something went wrong.");
+  if (res.status === 401 && !path.startsWith("/auth/")) {
+    // Signed out (cookie expired, or signed out on another device): back to the sign-in screen.
+    if (!document.body.classList.contains("signed-out")) Auth.show("signin");
+    throw new ApiError("Please sign in.", 401);
+  }
+  if (!res.ok) throw new ApiError(data.error || "Something went wrong. Please try again.", res.status);
   return data;
 }
 
@@ -214,6 +219,7 @@ function openSearch() {
 // Press "/" anywhere to jump to topic search.
 document.addEventListener("keydown", e => {
   if (e.key !== "/" || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+  if (document.body.classList.contains("signed-out")) return;
   e.preventDefault();
   openSearch();
 });
@@ -285,6 +291,7 @@ document.addEventListener("click", e => {
 window.addEventListener("hashchange", route);
 
 async function route() {
+  if (document.body.classList.contains("signed-out")) return;
   const { view, arg, params } = parseHash();
   const home = !view || view === "home";
   window.VideoPlayer?.stopAll();
@@ -662,13 +669,18 @@ async function dashboard() {
       <div class="card"><p class="muted">Your best quiz score on these is under 70%. A quick review will help.</p>
       <div class="chips">${review.map(t => `<a class="chip weak" href="#/learn/${t}">${esc(BY_ID[t].name)} · ${ME.quiz[t].best}%</a>`).join("")}</div></div>` : ""}
 
-    <h3>Settings</h3>
+    <h3>Account</h3>
     <div class="card">
-      <label for="name">Your name <small>(shown on your forum posts)</small></label>
+      <p class="account-line">Signed in as <b>${esc(ME.username ? "@" + ME.username : ME.email)}</b>
+        ${ME.username && ME.email ? `<small>${esc(ME.email)}</small>` : ""}
+        ${ME.google ? `<small>Google sign-in is linked</small>` : ""}</p>
+      <label for="name">Display name <small>(shown on your forum posts)</small></label>
       <div class="row"><input id="name" value="${esc(ME.name)}" maxlength="40" placeholder="Anonymous learner">
-        <button id="save-name">Save</button></div>
-      <p><button class="ghost small" id="reset">Reset my progress</button>
-        <small>Your progress is saved on the server and linked to this browser.</small></p>
+        <button id="save-name">Save name</button></div>
+      <div class="row account-actions">
+        <button class="ghost sign-out" type="button">Sign out</button>
+        <button class="ghost small" id="reset">Reset my progress</button>
+      </div>
     </div>`;
 
   $("#save-name").onclick = async () => {
@@ -794,6 +806,14 @@ async function forum(_, params) {
         if (!confirm("Delete this question and its answers?")) return;
         await api("/questions/" + t.dataset.del, { method: "DELETE" });
         toast("Question deleted");
+      } else if (t.dataset.delAnswer) {
+        if (!confirm("Delete this answer?")) return;
+        await api("/answers/" + t.dataset.delAnswer, { method: "DELETE" });
+        toast("Answer deleted");
+      } else if (t.dataset.block) {
+        if (!confirm("Block this person? They'll be signed out, can't sign in again, and everything they posted is deleted.")) return;
+        await api("/admin/block", { method: "POST", body: { kind: t.dataset.block, id: +t.dataset.id } });
+        toast("Account blocked and posts deleted");
       } else if (t.dataset.helpful) {
         await api(`/answers/${t.dataset.helpful}/helpful`, { method: "POST" });
       } else if (t.dataset.reply) {
@@ -823,7 +843,8 @@ function renderQuestion(q) {
         <div class="meta">
           ${topic ? `<a class="chip" href="#/learn/${topic.id}">${esc(topic.name)}</a>` : ""}
           ${esc(q.author)} · ${timeAgo(q.created)} · ${plural(q.answer_count, "answer")}
-          ${q.mine ? ` · <button class="link" data-del="${q.id}">Delete</button>` : ""}
+          ${q.mine || ME.admin ? ` · <button class="link" data-del="${q.id}">Delete</button>` : ""}
+          ${ME.admin && !q.mine ? ` · <button class="link" data-block="q" data-id="${q.id}">Block author</button>` : ""}
         </div>
       </div>
     </div>
@@ -847,6 +868,8 @@ function renderAnswer(a, q) {
         ${a.helpful ? `<span class="badge ok">✓ Marked helpful by the asker</span>` : ""}
         ${esc(a.author)} · ${timeAgo(a.created)}
         ${q.mine ? ` · <button class="link" data-helpful="${a.id}">${a.helpful ? "Unmark helpful" : "Mark as helpful"}</button>` : ""}
+        ${a.mine || ME.admin ? ` · <button class="link" data-del-answer="${a.id}">Delete</button>` : ""}
+        ${ME.admin && !a.mine ? ` · <button class="link" data-block="a" data-id="${a.id}">Block author</button>` : ""}
       </div>
     </div>
   </div>`;
@@ -1606,18 +1629,255 @@ function startGraph() {
   })(t0);
 }
 
+// ==================================================
+// SIGN IN: username or email + password, or Google
+// ==================================================
+const Auth = (() => {
+  let config = { google_client_id: "", turnstile_site_key: "", email_ready: false };
+  let view = "signin", pendingEmail = "", captcha = null, googleReady = false;
+  const card = $("#auth-card");
+
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const old = document.querySelector(`script[src="${src}"]`);
+      if (old) { if (old.dataset.loaded) resolve(); else old.addEventListener("load", resolve); return; }
+      const s = document.createElement("script");
+      s.src = src;
+      s.async = true;
+      s.onload = () => { s.dataset.loaded = "1"; resolve(); };
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+
+  const field = (id, label, attrs, hint = "") => `
+    <div class="field">
+      <label for="${id}">${label}</label>
+      <input id="${id}" ${attrs}${hint ? ` aria-describedby="${id}-hint"` : ""}>
+      ${hint ? `<small class="hint" id="${id}-hint">${hint}</small>` : ""}
+    </div>`;
+  const googleSlot = () => config.google_client_id
+    ? `<div class="google-slot" id="google-slot"></div><div class="or"><span>or</span></div>` : "";
+  const captchaSlot = () => config.turnstile_site_key ? `<div class="captcha-slot" id="captcha-slot"></div>` : "";
+  const errorBox = `<p class="form-error" role="alert"></p>`;
+  const NAME = 'autocapitalize="none" autocorrect="off" spellcheck="false" required';
+
+  const VIEWS = {
+    signin: () => `
+      <h2>Sign in</h2>
+      ${googleSlot()}
+      <form id="auth-form" novalidate>
+        ${field("a-login", "Username or email", `name="login" autocomplete="username" ${NAME}`)}
+        ${field("a-pass", "Password", 'name="password" type="password" autocomplete="current-password" required')}
+        ${errorBox}
+        <button type="submit" class="btn-block">Sign in</button>
+      </form>
+      <p class="auth-alt"><button type="button" class="link" data-auth="forgot">Forgot your password?</button></p>
+      <p class="auth-switch">New to CalcLearners? <button type="button" class="link" data-auth="signup">Create an account</button></p>`,
+
+    signup: () => `
+      <h2>Create your account</h2>
+      ${googleSlot()}
+      ${config.email_ready ? `<form id="auth-form" novalidate>
+        ${field("a-user", "Username", `name="username" autocomplete="username" maxlength="20" ${NAME}`,
+          "2 to 20 letters, numbers or _. You can sign in with it.")}
+        ${field("a-email", "Email", 'name="email" type="email" autocomplete="email" required',
+          "We'll email you a code to confirm it.")}
+        ${field("a-pass", "Password", 'name="password" type="password" autocomplete="new-password" required',
+          "At least 8 characters.")}
+        ${captchaSlot()}
+        ${errorBox}
+        <button type="submit" class="btn-block">Create account</button>
+      </form>` : `${errorBox}<p class="muted">Signing up with an email isn't switched on yet. Use Continue with Google.</p>`}
+      <p class="auth-switch">Already have an account? <button type="button" class="link" data-auth="signin">Sign in</button></p>`,
+
+    verify: () => `
+      <h2>Check your email</h2>
+      <p>We sent a 6-digit code to <b>${esc(pendingEmail)}</b>. It expires in 15 minutes.</p>
+      <form id="auth-form" novalidate>
+        ${field("a-code", "Verification code", 'name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required')}
+        ${errorBox}
+        <button type="submit" class="btn-block">Verify email</button>
+      </form>
+      <p class="auth-alt">No email? Check your spam folder, or <button type="button" class="link" id="resend">send a new code</button>.</p>
+      <p class="auth-switch">Wrong email address? <button type="button" class="link" data-auth="signup">Start again</button></p>`,
+
+    forgot: () => `
+      <h2>Reset your password</h2>
+      <p>Enter your username or email. If it matches an account, we'll email that account a code to set a new password.</p>
+      <form id="auth-form" novalidate>
+        ${field("a-login", "Username or email", `name="login" autocomplete="username" ${NAME}`)}
+        ${captchaSlot()}
+        ${errorBox}
+        <button type="submit" class="btn-block">Email me a code</button>
+      </form>
+      <p class="auth-switch">Remembered it? <button type="button" class="link" data-auth="signin">Sign in</button></p>`,
+
+    reset: () => `
+      <h2>Choose a new password</h2>
+      <p>If that account exists, we've emailed a 6-digit code to its address. It expires in 15 minutes.</p>
+      <form id="auth-form" novalidate>
+        ${field("a-code", "Reset code", 'name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required')}
+        ${field("a-pass", "New password", 'name="password" type="password" autocomplete="new-password" required',
+          "At least 8 characters. Signing in with it signs you out everywhere else.")}
+        ${errorBox}
+        <button type="submit" class="btn-block">Save new password</button>
+      </form>
+      <p class="auth-switch">No email? <button type="button" class="link" data-auth="forgot">Try again</button></p>`
+  };
+
+  // What each form sends to the server.
+  const SUBMIT = {
+    signin: f => ["/auth/login", { login: f.login.value, password: f.password.value }],
+    signup: f => ["/auth/signup", { username: f.username.value, email: f.email.value, password: f.password.value, turnstile: token() }],
+    verify: f => ["/auth/verify", { code: f.code.value }],
+    forgot: f => ["/auth/forgot", { login: f.login.value, turnstile: token() }],
+    reset: f => ["/auth/reset", { code: f.code.value, password: f.password.value }]
+  };
+
+  const token = () => (captcha !== null && window.turnstile ? turnstile.getResponse(captcha) || "" : "");
+  const showError = msg => { const box = card.querySelector(".form-error"); if (box) box.textContent = msg; else toast(msg); };
+
+  function render(next, message = "") {
+    view = next;
+    captcha = null;
+    card.innerHTML = VIEWS[view]();
+    const form = $("#auth-form");
+    if (form) {
+      form.addEventListener("submit", submit);
+      form.addEventListener("input", () => { form.querySelector(".form-error").textContent = ""; });
+    }
+    if (message) showError(message);
+    // Phones: don't throw the keyboard over the page before the person has read it.
+    const first = card.querySelector("input");
+    if (first && !isPhone()) first.focus();
+    if ($("#google-slot")) showGoogle();
+    if ($("#captcha-slot")) showCaptcha();
+  }
+
+  async function submit(e) {
+    e.preventDefault();
+    const form = e.currentTarget, btn = form.querySelector("button[type=submit]");
+    const missing = [...form.querySelectorAll("input[required]")].find(i => !i.value.trim());
+    if (missing) {
+      showError(`Enter your ${missing.labels[0].textContent.toLowerCase()}.`);
+      missing.focus();
+      return;
+    }
+    const [path, data] = SUBMIT[view](form);
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "One moment…";
+    try {
+      const r = await api(path, { method: "POST", body: data });
+      if (r.next === "verify") { pendingEmail = r.email; render("verify"); }
+      else if (r.next === "reset") render("reset");
+      else await signedIn();
+    } catch (err) {
+      showError(err.message);
+      if (captcha !== null && window.turnstile) turnstile.reset(captcha);
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  }
+
+  async function showGoogle() {
+    try {
+      await loadScript("https://accounts.google.com/gsi/client");
+      if (!googleReady) {
+        google.accounts.id.initialize({ client_id: config.google_client_id, callback: onGoogle, ux_mode: "popup" });
+        googleReady = true;
+      }
+      const slot = $("#google-slot");
+      if (!slot) return;
+      google.accounts.id.renderButton(slot, {
+        theme: document.documentElement.dataset.theme === "dark" ? "filled_black" : "outline",
+        size: "large", shape: "rectangular", logo_alignment: "center",
+        text: view === "signup" ? "signup_with" : "continue_with",
+        width: Math.min(400, slot.clientWidth || 320)
+      });
+    } catch (e) {
+      $("#google-slot")?.nextElementSibling?.remove();
+      $("#google-slot")?.remove();
+    }
+  }
+
+  async function onGoogle(resp) {
+    try {
+      await api("/auth/google", { method: "POST", body: { credential: resp.credential } });
+      await signedIn();
+    } catch (e) { showError(e.message); }
+  }
+
+  async function showCaptcha() {
+    try {
+      await loadScript("https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit");
+      const slot = $("#captcha-slot");
+      if (slot) captcha = turnstile.render(slot, { sitekey: config.turnstile_site_key, theme: "auto", size: "flexible" });
+    } catch (e) { /* the server explains if the check is missing */ }
+  }
+
+  card.addEventListener("click", async e => {
+    const b = e.target.closest("[data-auth]");
+    if (b) { render(b.dataset.auth); return; }
+    if (e.target.id === "resend") {
+      try {
+        const r = await api("/auth/resend", { method: "POST" });
+        pendingEmail = r.email;
+        toast("We sent a new code");
+      } catch (err) { showError(err.message); }
+    }
+  });
+
+  function show(which = "signin", message = "") {
+    document.body.classList.add("signed-out");
+    window.VideoPlayer?.stopAll();
+    setMenu(false);
+    closeTopics(false);
+    $("#landing").hidden = true;
+    $("#app").hidden = true;
+    $("#auth").hidden = false;
+    window.scrollTo(0, 0);
+    render(which, message);
+  }
+
+  async function loadConfig() {
+    try { config = await api("/auth/config"); } catch (e) { /* the offline banner explains */ }
+  }
+
+  return { show, loadConfig };
+})();
+
+// After signing in (or on load with a valid cookie): load your account and the course.
+let graphStarted = false;
+async function signedIn() {
+  ME = await api("/me");
+  // Any progress from before accounts now lives in this account, so the old ID can go.
+  if (LEGACY_UID) { try { localStorage.removeItem("uid"); } catch (e) { /* blocked */ } LEGACY_UID = null; }
+  LESSONS = await api("/lessons");
+  BY_ID = Object.fromEntries(LESSONS.map(l => [l.id, l]));
+  document.body.classList.remove("signed-out");
+  $("#auth").hidden = true;
+  updateProgress();
+  await route();
+  if (!graphStarted) { graphStarted = true; startGraph(); }
+}
+
+document.addEventListener("click", async e => {
+  if (!e.target.closest(".sign-out")) return;
+  try { await api("/auth/logout", { method: "POST" }); } catch (err) { /* signed out locally anyway */ }
+  location.hash = "#/";
+  location.reload();
+});
+
 // ---------- Start ----------
 (async function init() {
+  await useLocalServer();
+  await Auth.loadConfig();
   try {
-    const lessons = await loadLessons();
-    const me = await api("/me");
-    // The server now holds our ID in its cookie, so the old copy can go.
-    if (LEGACY_UID) { try { localStorage.removeItem("uid"); } catch (e) { /* blocked */ } LEGACY_UID = null; }
-    LESSONS = lessons;
-    BY_ID = Object.fromEntries(lessons.map(l => [l.id, l]));
-    ME = me;
-  } catch (e) { offline(); }
-  updateProgress();
-  route();
-  startGraph();
+    await signedIn();
+  } catch (e) {
+    if (e.status === 0) offline();
+    Auth.show("signin", e.status === 403 ? e.message : "");
+  }
 })();
