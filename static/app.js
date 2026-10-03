@@ -305,7 +305,7 @@ async function route() {
     return;
   }
   renderSidebar();
-  const views = { learn, dashboard, formulas, forum, upload, feedback, videos: videosView, watch };
+  const views = { learn, dashboard, formulas, forum, upload, feedback, videos: videosView, watch, admin };
   await (views[view] || learn)(arg, params);
   math(V);
   // A quick fade shows the page changed (skipped when motion is turned off).
@@ -669,7 +669,8 @@ async function dashboard() {
       <div class="row"><input id="name" value="${esc(ME.name)}" maxlength="40" placeholder="Anonymous learner">
         <button id="save-name">Save name</button></div>
       <p><small>There are no accounts. Your progress is saved on the server and linked to this browser by a
-        cookie, so clearing your cookies or switching browsers starts you fresh.</small></p>
+        cookie, so clearing your cookies or switching browsers starts you fresh. What is saved for a browser
+        that hasn't visited for 12 months is deleted.</small></p>
       <div class="row account-actions">
         <button class="ghost small" id="reset">Reset my progress</button>
         <button class="ghost small danger" id="delete-data" aria-expanded="false" aria-controls="delete-form">Delete my data</button>
@@ -777,6 +778,8 @@ async function forum(_, params) {
     <h2>Q&amp;A Forum</h2>
     <p>Stuck? Ask the community. Rude, off-topic or very short answers are filtered out automatically.
       You can type math like <code>\\( x^2 \\)</code> and it will display nicely.</p>
+    <p><small>Posts are public. You must be 13 or older to post, and please don't share personal details such
+      as full names, contact details or your school. See the <a href="terms.html">rules</a>.</small></p>
 
     <div class="card" id="ask-card">
       <h3>Ask a question</h3>
@@ -849,6 +852,11 @@ async function forum(_, params) {
         if (!confirm("Block this person? Their browser is locked out and everything they posted is deleted.")) return;
         await api("/admin/block", { method: "POST", body: { kind: t.dataset.block, id: +t.dataset.id } });
         toast("Blocked, and their posts deleted");
+      } else if (t.dataset.report) {
+        if (!confirm("Report this post to the moderators?")) return;
+        await api("/report", { method: "POST", body: { kind: t.dataset.report, id: +t.dataset.id } });
+        toast("Reported. Thanks, a moderator will take a look.");
+        return;
       } else if (t.dataset.helpful) {
         await api(`/answers/${t.dataset.helpful}/helpful`, { method: "POST" });
       } else if (t.dataset.reply) {
@@ -880,6 +888,7 @@ function renderQuestion(q) {
           ${esc(q.author)} · ${timeAgo(q.created)} · ${plural(q.answer_count, "answer")}
           ${q.mine || ME.admin ? ` · <button class="link" data-del="${q.id}">Delete</button>` : ""}
           ${ME.admin && !q.mine ? ` · <button class="link" data-block="q" data-id="${q.id}">Block author</button>` : ""}
+          ${q.mine ? "" : ` · <button class="link" data-report="q" data-id="${q.id}">Report</button>`}
         </div>
       </div>
     </div>
@@ -905,6 +914,7 @@ function renderAnswer(a, q) {
         ${q.mine ? ` · <button class="link" data-helpful="${a.id}">${a.helpful ? "Unmark helpful" : "Mark as helpful"}</button>` : ""}
         ${a.mine || ME.admin ? ` · <button class="link" data-del-answer="${a.id}">Delete</button>` : ""}
         ${ME.admin && !a.mine ? ` · <button class="link" data-block="a" data-id="${a.id}">Block author</button>` : ""}
+        ${a.mine ? "" : ` · <button class="link" data-report="a" data-id="${a.id}">Report</button>`}
       </div>
     </div>
   </div>`;
@@ -930,6 +940,9 @@ async function upload() {
       <div class="styles">${STYLES.map((s, i) => `
         <label class="style"><input type="radio" name="style" value="${i}" ${i === savedStyle ? "checked" : ""}>
           <b>${s[0]}</b><small>${s[1]}</small></label>`).join("")}</div>
+      <p><small>Before you upload: a PDF may be sent to an AI service (Anthropic, in the United States) to
+        build its lesson. Don't upload files that contain personal information, and only upload notes you're
+        allowed to share. <a href="privacy.html">How we handle uploads</a></small></p>
       <button id="go">Upload &amp; build my lesson</button>
       <div id="out" role="status"></div>
     </div>
@@ -1384,6 +1397,74 @@ function renderPlan(r) {
     <ol>${steps.map(s => `<li>${s}</li>`).join("")}</ol>
     ${dates}
   </div>`;
+}
+
+// ---------- Moderation (#/admin, not linked from the menu) ----------
+async function admin() {
+  if (!ME.admin) {
+    V.innerHTML = `
+      <h2>Moderation</h2>
+      <p>Enter the moderator passcode to see reported posts and to delete or block from this browser.</p>
+      <form class="card" id="unlock" novalidate>
+        <div class="field">
+          <label for="admin-key">Passcode</label>
+          <input id="admin-key" type="password" autocomplete="off" required>
+        </div>
+        <p class="form-error" role="alert"></p>
+        <button type="submit">Unlock moderation</button>
+      </form>`;
+    $("#unlock").onsubmit = async e => {
+      e.preventDefault();
+      try {
+        await api("/admin/unlock", { method: "POST", body: { key: $("#admin-key").value } });
+        ME.admin = true;
+        admin();
+      } catch (err) { $("#unlock .form-error").textContent = err.message; }
+    };
+    return;
+  }
+
+  let items = [];
+  try { items = await api("/admin/reports"); } catch (e) { toast(e.message); }
+  V.innerHTML = `
+    <h2>Moderation</h2>
+    <p>This browser can delete any forum post and block its author. Reported posts are listed here; the same
+      Delete and Block links also show on every post in the <a href="#/forum">forum</a>.</p>
+    <div id="reports">${items.length ? items.map(p => `<div class="card">
+      <small>${plural(p.reports, "report")} · ${p.kind === "q" ? "Question" : "Answer"} by ${esc(p.author)}</small>
+      <p><b>${esc(p.title)}</b></p>
+      ${p.body ? `<p class="post-text">${esc(p.body)}</p>` : ""}
+      <div class="row">
+        <button class="small danger" data-remove="${p.kind}" data-id="${p.id}">Delete post</button>
+        <button class="small ghost danger" data-block="${p.kind}" data-id="${p.id}">Block author</button>
+        <button class="small ghost" data-dismiss="${p.kind}" data-id="${p.id}">Keep post</button>
+      </div>
+    </div>`).join("") : `<div class="empty">No reported posts.</div>`}</div>
+    <p><button class="ghost small" id="admin-lock">Stop moderating on this browser</button></p>`;
+  math(V);
+
+  $("#reports").onclick = async e => {
+    const t = e.target.closest("button");
+    if (!t) return;
+    const post = { kind: t.dataset.remove || t.dataset.block || t.dataset.dismiss, id: +t.dataset.id };
+    try {
+      if (t.dataset.remove) {
+        if (!confirm("Delete this post?")) return;
+        await api((post.kind === "q" ? "/questions/" : "/answers/") + post.id, { method: "DELETE" });
+      } else if (t.dataset.block) {
+        if (!confirm("Block this person? Their browser is locked out and everything they posted is deleted.")) return;
+        await api("/admin/block", { method: "POST", body: post });
+      } else if (t.dataset.dismiss) {
+        await api("/admin/reports/dismiss", { method: "POST", body: post });
+      } else return;
+      admin();
+    } catch (err) { toast(err.message); }
+  };
+  $("#admin-lock").onclick = async () => {
+    try { await api("/admin/lock", { method: "POST" }); } catch (err) { toast(err.message); return; }
+    ME.admin = false;
+    admin();
+  };
 }
 
 // ---------- Feedback ----------

@@ -8,6 +8,7 @@ Then open http://localhost:5000
 There are no accounts. The server gives each browser a random ID the first time
 it visits, kept in a signed, HttpOnly cookie, so progress, notes and posts belong to it.
 """
+import hmac
 import json
 import os
 import random
@@ -57,7 +58,7 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,          # page scripts can't read (or leak) the ID
     SESSION_COOKIE_SAMESITE="Lax",         # other sites can't send it with their POSTs
     SESSION_COOKIE_SECURE=True,            # HTTPS only (turned off for local runs below)
-    PERMANENT_SESSION_LIFETIME=timedelta(days=400),
+    PERMANENT_SESSION_LIFETIME=timedelta(days=365),
 )
 
 SCHEMA = """
@@ -143,6 +144,13 @@ CREATE TABLE IF NOT EXISTS videos (  -- AI-made lessons (hand-written ones live 
     source_hash TEXT,
     created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS reports (  -- forum posts flagged for the moderators
+    user_id TEXT NOT NULL,
+    kind TEXT NOT NULL,          -- 'q' for question, 'a' for answer
+    target_id INTEGER NOT NULL,
+    created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, kind, target_id)
+);
 CREATE TABLE IF NOT EXISTS rate_limits (
     key TEXT PRIMARY KEY,        -- rule:who:window length
     window INTEGER NOT NULL,     -- start of the current window (unix seconds)
@@ -198,25 +206,26 @@ def init_db():
         # Databases made before videos existed lack this column.
         if "video_id" not in [r[1] for r in conn.execute("PRAGMA table_info(uploads)")]:
             conn.execute("ALTER TABLE uploads ADD COLUMN video_id TEXT")
-        # Columns added after the first version. `username` is left over from when the site
-        # had accounts: it now only marks which visitors are admins (see ADMIN_USERS).
+        # Columns added after the first version.
         have = [r[1] for r in conn.execute("PRAGMA table_info(users)")]
-        for column, kind in [("username", "TEXT"), ("blocked", "INTEGER NOT NULL DEFAULT 0")]:
+        for column, kind in [("blocked", "INTEGER NOT NULL DEFAULT 0"), ("admin", "INTEGER NOT NULL DEFAULT 0"),
+                             ("last_seen", "TEXT")]:
             if column not in have:
                 conn.execute(f"ALTER TABLE users ADD COLUMN {column} {kind}")  # fixed names from this list
-        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_username ON users(username)")
-        # Older versions had sign-in (email codes, passwords, Google). Forget all of it.
+        # Older versions had sign-in (email codes, usernames, passwords, Google). Forget all of
+        # it; the browsers that were signed in under an ADMIN_USERS name stay moderators.
+        if "username" in have:
+            conn.execute("UPDATE users SET admin = 1 WHERE username IN (SELECT value FROM json_each(?))",
+                         (json.dumps(sorted(settings.ADMIN_USERS)),))
         conn.execute("DROP TABLE IF EXISTS email_codes")
-        conn.execute("DROP INDEX IF EXISTS users_email")
-        conn.execute("DROP INDEX IF EXISTS users_google")
-        for column in ("email", "password_hash", "google_sub"):
+        for index in ("users_email", "users_google", "users_username"):
+            conn.execute(f"DROP INDEX IF EXISTS {index}")  # fixed names from this list
+        for column in ("email", "username", "password_hash", "google_sub"):
             if column in have:
                 try:
                     conn.execute(f"ALTER TABLE users DROP COLUMN {column}")  # fixed names from this list
                 except sqlite3.OperationalError:  # SQLite before 3.35 can't drop a column
                     conn.execute(f"UPDATE users SET {column} = NULL")
-        conn.execute("UPDATE users SET username = NULL WHERE username NOT IN (SELECT value FROM json_each(?))",
-                     (json.dumps(sorted(settings.ADMIN_USERS)),))
         # A restart kills any lesson that was still being generated.
         conn.execute("UPDATE videos SET status = 'failed', message = ? WHERE status = 'generating'",
                      ("The server restarted while building this lesson. Press Retry.",))
@@ -272,10 +281,10 @@ LEGACY_ID_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 def current_user():
     """Return this browser's visitor ID from its signed cookie, issuing a new one if needed."""
     uid = session.get("uid")
-    u = one("SELECT blocked FROM users WHERE id = ?", (uid,)) if uid else None
+    u = one("SELECT blocked, last_seen FROM users WHERE id = ?", (uid,)) if uid else None
     if not u:
         legacy = request.headers.get("X-User", "")
-        u = one("SELECT blocked FROM users WHERE id = ?", (legacy,)) if LEGACY_ID_RE.match(legacy) else None
+        u = one("SELECT blocked, last_seen FROM users WHERE id = ?", (legacy,)) if LEGACY_ID_RE.match(legacy) else None
         if u:
             uid = legacy
         else:
@@ -283,18 +292,71 @@ def current_user():
             limit("new-id", client_ip(), 200, 86400, "Too many new visitors from your network.")
             uid = secrets.token_urlsafe(24)
             run("INSERT INTO users (id) VALUES (?)", (uid,))
-            u = {"blocked": 0}
+            u = {"blocked": 0, "last_seen": None}
         session.permanent = True
         session["uid"] = uid
     if u["blocked"]:
         abort(403, "This browser has been blocked from CalcLearners.")
+    today = date.today().isoformat()
+    if u["last_seen"] != today:  # first request of the day from this browser
+        run("UPDATE users SET last_seen = ? WHERE id = ?", (today, uid))
+        if random.random() < 0.05:
+            forget_inactive()
     return uid
 
 
 def is_admin(uid):
-    """Admins are the browsers that were signed in under an ADMIN_USERS name when the site had accounts."""
-    u = one("SELECT username FROM users WHERE id = ?", (uid,))
-    return bool(u and u["username"] and u["username"] in settings.ADMIN_USERS)
+    """Moderators: browsers unlocked with the ADMIN_KEY passcode (see /api/admin/unlock)."""
+    u = one("SELECT admin FROM users WHERE id = ?", (uid,))
+    return bool(u and u["admin"])
+
+
+# ---------- Forgetting visitors ----------
+RETENTION_DAYS = 365  # the privacy policy promises this: keep it in step with privacy.html
+
+
+def forget_visitor(uid, posts):
+    """Delete what is saved for a visitor ID. Their forum posts go too when `posts` is true;
+    otherwise the posts stay up, linked to no one."""
+    mine = rows("SELECT stored_name, video_id FROM uploads WHERE user_id = ?", (uid,))
+    # One fixed statement per table, as in /api/reset.
+    for sql in ("DELETE FROM progress WHERE user_id = ?",
+                "DELETE FROM quiz_scores WHERE user_id = ?",
+                "DELETE FROM notes WHERE user_id = ?",
+                "DELETE FROM activity WHERE user_id = ?",
+                "DELETE FROM video_progress WHERE user_id = ?",
+                "DELETE FROM feedback WHERE user_id = ?",
+                "DELETE FROM uploads WHERE user_id = ?",
+                "DELETE FROM reports WHERE user_id = ?",
+                "DELETE FROM votes WHERE user_id = ?"):
+        run(sql, (uid,))
+    if posts:  # the same way as in block_author
+        for sql in ("DELETE FROM votes WHERE kind = 'a' AND target_id IN (SELECT id FROM answers WHERE user_id = ?)",
+                    """DELETE FROM votes WHERE kind = 'a' AND target_id IN
+                       (SELECT a.id FROM answers a JOIN questions q ON q.id = a.question_id WHERE q.user_id = ?)""",
+                    "DELETE FROM votes WHERE kind = 'q' AND target_id IN (SELECT id FROM questions WHERE user_id = ?)",
+                    "DELETE FROM answers WHERE user_id = ?",
+                    "DELETE FROM questions WHERE user_id = ?"):
+            run(sql, (uid,))
+    # AI lessons and the PDFs kept for them go too, unless someone else's upload still uses them.
+    for video_id in {u["video_id"] for u in mine if u["video_id"]}:
+        run("DELETE FROM videos WHERE id = ? AND NOT EXISTS (SELECT 1 FROM uploads WHERE video_id = ?)",
+            (video_id, video_id))
+    for stored in {u["stored_name"] for u in mine}:
+        if not one("SELECT 1 FROM videos WHERE source_file = ?", (stored,)):
+            try:
+                (UPLOADS / stored).unlink(missing_ok=True)
+            except OSError:  # still open (a lesson being built from it): don't let that stop the deletion
+                app.logger.warning("Couldn't remove upload %s of a deleted visitor", stored)
+    run("DELETE FROM users WHERE id = ?", (uid,))
+
+
+def forget_inactive():
+    """Browsers that haven't visited for a year are forgotten, a few at a time."""
+    cutoff = (date.today() - timedelta(days=RETENTION_DAYS)).isoformat()
+    for r in rows("""SELECT id FROM users WHERE COALESCE(last_seen, substr(created, 1, 10)) < ?
+                     AND blocked = 0 AND admin = 0 LIMIT 25""", (cutoff,)):
+        forget_visitor(r["id"], posts=False)
 
 
 # ---------- Request guards & security headers ----------
@@ -548,34 +610,7 @@ def delete_my_data():
     if str(body().get("confirm", "")).strip().upper() != "DELETE":
         abort(400, "Type DELETE to confirm.")
 
-    mine = rows("SELECT stored_name, video_id FROM uploads WHERE user_id = ?", (uid,))
-    # One fixed statement per table, as in /api/reset. Forum posts go the same way as in block_author.
-    for sql in ("DELETE FROM progress WHERE user_id = ?",
-                "DELETE FROM quiz_scores WHERE user_id = ?",
-                "DELETE FROM notes WHERE user_id = ?",
-                "DELETE FROM activity WHERE user_id = ?",
-                "DELETE FROM video_progress WHERE user_id = ?",
-                "DELETE FROM feedback WHERE user_id = ?",
-                "DELETE FROM uploads WHERE user_id = ?",
-                "DELETE FROM votes WHERE kind = 'a' AND target_id IN (SELECT id FROM answers WHERE user_id = ?)",
-                """DELETE FROM votes WHERE kind = 'a' AND target_id IN
-                   (SELECT a.id FROM answers a JOIN questions q ON q.id = a.question_id WHERE q.user_id = ?)""",
-                "DELETE FROM votes WHERE kind = 'q' AND target_id IN (SELECT id FROM questions WHERE user_id = ?)",
-                "DELETE FROM votes WHERE user_id = ?",
-                "DELETE FROM answers WHERE user_id = ?",
-                "DELETE FROM questions WHERE user_id = ?"):
-        run(sql, (uid,))
-    # AI lessons and the PDFs kept for them go too, unless someone else's upload still uses them.
-    for video_id in {u["video_id"] for u in mine if u["video_id"]}:
-        run("DELETE FROM videos WHERE id = ? AND NOT EXISTS (SELECT 1 FROM uploads WHERE video_id = ?)",
-            (video_id, video_id))
-    for stored in {u["stored_name"] for u in mine}:
-        if not one("SELECT 1 FROM videos WHERE source_file = ?", (stored,)):
-            try:
-                (UPLOADS / stored).unlink(missing_ok=True)
-            except OSError:  # still open (a lesson being built from it): don't let that stop the deletion
-                app.logger.warning("Couldn't remove upload %s of a deleted visitor", stored)
-    run("DELETE FROM users WHERE id = ?", (uid,))
+    forget_visitor(uid, posts=True)
     session.clear()
     return jsonify(ok=True)
 
@@ -698,7 +733,7 @@ def block_author():
     """Admins: block the author of a post and remove everything they posted."""
     uid = current_user()
     if not is_admin(uid):
-        abort(403, "Only admins can block people.")
+        abort(403, "Only moderators can block people.")
     data = body()
     owner_sql = {"q": "SELECT user_id FROM questions WHERE id = ?",
                  "a": "SELECT user_id FROM answers WHERE id = ?"}.get(data.get("kind")) or abort(400, "Unknown post.")
@@ -718,6 +753,81 @@ def block_author():
                 "DELETE FROM answers WHERE user_id = ?",
                 "DELETE FROM questions WHERE user_id = ?"):
         run(sql, (author,))
+    return jsonify(ok=True)
+
+
+@app.post("/api/report")
+def report():
+    """Flag a forum post for the moderators."""
+    uid = current_user()
+    limit("report", uid, 10, 3600, "You've reported a lot of posts.")
+    limit("report-ip", client_ip(), 40, 3600, "Lots of reports are coming from your network.")
+    data = body()
+    kind = data.get("kind")
+    try:
+        target = int(data.get("id"))
+    except (TypeError, ValueError):
+        abort(400, "Unknown post.")
+    post_sql = {"q": "SELECT 1 FROM questions WHERE id = ?",
+                "a": "SELECT 1 FROM answers WHERE id = ?"}.get(kind) or abort(400, "Unknown post.")
+    one(post_sql, (target,)) or abort(404, "Post not found.")
+    run("INSERT OR IGNORE INTO reports (user_id, kind, target_id) VALUES (?, ?, ?)", (uid, kind, target))
+    return jsonify(ok=True)
+
+
+@app.post("/api/admin/unlock")
+def admin_unlock():
+    """Make this browser a moderator, given the ADMIN_KEY passcode from secrets.env."""
+    uid = current_user()
+    limit("admin-unlock", client_ip(), 5, 3600, "Too many tries at the passcode.")
+    key = str(body().get("key", ""))[:200]
+    if not settings.ADMIN_KEY or not hmac.compare_digest(key.encode(), settings.ADMIN_KEY.encode()):
+        abort(403, "That passcode isn't right.")
+    run("UPDATE users SET admin = 1 WHERE id = ?", (uid,))
+    return jsonify(ok=True)
+
+
+@app.post("/api/admin/lock")
+def admin_lock():
+    run("UPDATE users SET admin = 0 WHERE id = ?", (current_user(),))
+    return jsonify(ok=True)
+
+
+REPORTS_SQL = """
+    SELECT r.kind, r.target_id AS id, COUNT(*) AS reports, MAX(r.created) AS last,
+           COALESCE(q.author, a.author) AS author,
+           COALESCE(q.title, aq.title) AS title,
+           COALESCE(a.body, q.body) AS body
+    FROM reports r
+    LEFT JOIN questions q ON r.kind = 'q' AND q.id = r.target_id
+    LEFT JOIN answers a ON r.kind = 'a' AND a.id = r.target_id
+    LEFT JOIN questions aq ON aq.id = a.question_id
+    GROUP BY r.kind, r.target_id
+    ORDER BY reports DESC, last DESC
+    LIMIT 100"""
+
+
+@app.get("/api/admin/reports")
+def reported_posts():
+    if not is_admin(current_user()):
+        abort(403, "Only moderators can see reports.")
+    # Reports on posts that have since been deleted are of no use.
+    run("""DELETE FROM reports WHERE (kind = 'q' AND target_id NOT IN (SELECT id FROM questions))
+                                  OR (kind = 'a' AND target_id NOT IN (SELECT id FROM answers))""")
+    return jsonify(rows(REPORTS_SQL))
+
+
+@app.post("/api/admin/reports/dismiss")
+def dismiss_reports():
+    """Moderators: the post is fine, drop the reports on it."""
+    if not is_admin(current_user()):
+        abort(403, "Only moderators can dismiss reports.")
+    data = body()
+    try:
+        target = int(data.get("id"))
+    except (TypeError, ValueError):
+        abort(400, "Unknown post.")
+    run("DELETE FROM reports WHERE kind = ? AND target_id = ?", (str(data.get("kind")), target))
     return jsonify(ok=True)
 
 
