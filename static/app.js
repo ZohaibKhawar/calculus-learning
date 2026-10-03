@@ -778,8 +778,9 @@ async function forum(_, params) {
     <h2>Q&amp;A Forum</h2>
     <p>Stuck? Ask the community. Rude, off-topic or very short answers are filtered out automatically.
       You can type math like <code>\\( x^2 \\)</code> and it will display nicely.</p>
-    <p><small>Posts are public. You must be 13 or older to post, and please don't share personal details such
-      as full names, contact details or your school. See the <a href="terms.html">rules</a>.</small></p>
+    <p><small>Posts are public, so please don't share personal details such as full names, contact details or
+      your school. Under 13? Ask a parent or guardian before you post. See the
+      <a href="terms.html">rules</a>.</small></p>
 
     <div class="card" id="ask-card">
       <h3>Ask a question</h3>
