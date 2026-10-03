@@ -13,6 +13,8 @@ plain HTML/CSS/JavaScript frontend.
   and 18 practice questions per episode (easy → expert). Your learning style picks
   whether a lesson opens as Watch, Read or Practice.
 - **Progress tracking**, a **formula sheet**, a moderated **Q&A forum**, and a scroll-animated landing page.
+- **A page per lesson for search engines** at `/lessons/<id>`, listed in `/sitemap.xml`
+  (the app itself lives at one address, which search engines see as a single page).
 
 ## Run it
 

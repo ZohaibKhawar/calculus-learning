@@ -34,3 +34,6 @@ ADMIN_KEY = setting("ADMIN_KEY") if len(setting("ADMIN_KEY")) >= 12 else ""
 # From when the site had accounts. Read once, on the first start after sign-in was removed,
 # to keep those people's browsers as moderators.
 ADMIN_USERS = {u.strip().lower() for u in setting("ADMIN_USERS").split(",") if u.strip()}
+# The code Google Search Console gives ("HTML tag" method) to prove the site is yours.
+# Put on the home page when set.
+GOOGLE_SITE_VERIFICATION = setting("GOOGLE_SITE_VERIFICATION")

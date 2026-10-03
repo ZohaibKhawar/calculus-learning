@@ -20,9 +20,11 @@ import time
 import uuid
 import zipfile
 from datetime import date, timedelta
+from itertools import groupby
 from pathlib import Path
 
-from flask import Flask, abort, g, jsonify, redirect, request, send_from_directory, session
+from flask import Flask, abort, g, jsonify, redirect, render_template, request, session, url_for
+from markupsafe import escape
 from werkzeug.exceptions import HTTPException, TooManyRequests
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -405,6 +407,7 @@ def security_headers(resp):
         resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     if request.path.startswith("/api/"):
         resp.headers["Cache-Control"] = "no-store"
+        resp.headers["X-Robots-Tag"] = "noindex"  # API answers (forum posts, progress) stay out of search results
     return resp
 
 
@@ -489,7 +492,61 @@ def check_answer(question, answer):
 # ---------- Pages ----------
 @app.get("/")
 def index():
-    return send_from_directory(app.static_folder, "index.html")
+    # The page's own address and the Search Console code depend on where the site runs,
+    # so they are added to the <head> here instead of being written into index.html.
+    head = f'  <link rel="canonical" href="{escape(request.url_root)}">\n'
+    if settings.GOOGLE_SITE_VERIFICATION:
+        head += f'  <meta name="google-site-verification" content="{escape(settings.GOOGLE_SITE_VERIFICATION)}">\n'
+    page = (BASE / "static" / "index.html").read_text(encoding="utf8")
+    return page.replace("</head>", head + "</head>", 1)
+
+
+# The app shows lessons at /#/learn/<id>, and search engines ignore everything after the "#".
+# These pages give every lesson an address of its own that can be found, and link into the app.
+LESSON_BY_ID = {l["id"]: l for l in LESSONS}
+
+
+def unit_label(lesson):
+    return "Extra topics" if lesson["unit"] == "Extra" else f"{lesson['unit']}: {lesson['unit_title']}"
+
+
+@app.get("/lessons")
+def lesson_list():
+    units = [(label, list(group)) for label, group in groupby(LESSONS, unit_label)]
+    return render_template("lessons.html", units=units, count=len(LESSONS))
+
+
+@app.get("/lessons/<lesson_id>")
+def lesson_page(lesson_id):
+    lesson = LESSON_BY_ID.get(lesson_id)
+    if not lesson:
+        abort(404)
+    i = LESSONS.index(lesson)
+    return render_template(
+        "lesson.html",
+        lesson=lesson,
+        unit=unit_label(lesson),
+        prereqs=[LESSON_BY_ID[p] for p in lesson["prereqs"] if p in LESSON_BY_ID],
+        prev=LESSONS[i - 1] if i else None,
+        next=LESSONS[i + 1] if i + 1 < len(LESSONS) else None,
+    )
+
+
+@app.get("/sitemap.xml")
+def sitemap():
+    pages = [url_for("index", _external=True), url_for("lesson_list", _external=True)]
+    pages += [url_for("lesson_page", lesson_id=l["id"], _external=True) for l in LESSONS]
+    xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+    xml += "".join(f"  <url><loc>{escape(page)}</loc></url>\n" for page in pages)
+    return app.response_class(xml + "</urlset>\n", mimetype="application/xml")
+
+
+@app.get("/robots.txt")
+def robots():
+    # Crawlers stay out of the API, apart from the two calls the home page needs to draw itself.
+    lines = ["User-agent: *", "Allow: /api/me$", "Allow: /api/lessons$", "Disallow: /api/",
+             "", "Sitemap: " + url_for("sitemap", _external=True)]
+    return app.response_class("\n".join(lines) + "\n", mimetype="text/plain")
 
 
 # ---------- Lessons ----------

@@ -570,6 +570,13 @@ main.legal { width: 100%; max-width: 808px; margin: 0 auto; padding: 40px var(--
 .legal th, .legal td { padding: 10px 14px 10px 0; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
 .legal td code { white-space: nowrap; }
 
+/* ---------- Lesson pages at /lessons (same column as the legal pages) ---------- */
+.lesson-page .crumbs { margin-bottom: 10px; }
+.lesson-page .card h2 { margin: 0 0 10px; font-size: 21px; font-weight: 600; letter-spacing: -0.01em; }
+.lesson-page .card .btn { margin-top: 4px; }
+.lesson-list { padding-left: 0; list-style: none; }
+.lesson-list a { font-weight: 700; }
+
 /* ---------- Learning app layout ---------- */
 #app { flex: 1; display: flex; align-items: flex-start; width: 100%; }
 

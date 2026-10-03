@@ -1,0 +1,62 @@
+{% extends "page.html" %}
+{# Lesson text is written by us and carries its own <b>/<i> and LaTeX, so it goes in as-is ("safe"), the way app.js shows it. #}
+{% block title %}{{ lesson.name }}: formulas, worked example and common mistakes{% endblock %}
+{% block description %}{{ lesson.name }} explained in about {{ lesson.minutes }} minutes: the big idea, key formulas, a worked example and the mistakes to avoid. Free, with practice problems and a quiz.{% endblock %}
+{% block main %}
+    <div class="crumbs">
+      <a href="/lessons">All lessons</a>
+      <span>{{ unit }}</span>
+      <span class="badge lvl-{{ lesson.level|lower }}">{{ lesson.level }}</span>
+      <span>About {{ lesson.minutes }} min</span>
+    </div>
+    <h1>{{ lesson.name }}</h1>
+
+    {% if prereqs %}
+    <div class="card prereq">
+      <b>Before you start:</b> this lesson builds on
+      <div class="chips">
+        {% for p in prereqs %}<a class="chip" href="/lessons/{{ p.id }}">{{ p.name }}</a>{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <section id="s-idea" class="card">
+      <h2>The big idea</h2>
+      <p>{{ lesson.idea|safe }}</p>
+    </section>
+
+    <section id="s-formulas" class="card">
+      <h2>Key formulas</h2>
+      {% for label, tex in lesson.formulas %}
+      <div class="formula"><small>{{ label|safe }}</small>\[{{ tex|safe }}\]</div>
+      {% endfor %}
+    </section>
+
+    <section id="s-example" class="card">
+      <h2>Worked example</h2>
+      <p class="problem">{{ lesson.example.problem|safe }}</p>
+      <ol class="steps">
+        {% for step in lesson.example.steps %}<li>{{ step|safe }}</li>{% endfor %}
+      </ol>
+      <p class="answer"><b>Answer:</b> {{ lesson.example.answer|safe }}</p>
+    </section>
+
+    <section id="s-mistakes" class="card">
+      <h2>Common mistakes</h2>
+      <ul class="mistakes">
+        {% for mistake in lesson.mistakes %}<li>{{ mistake|safe }}</li>{% endfor %}
+      </ul>
+    </section>
+
+    <section class="card hl">
+      <h2>Now try it yourself</h2>
+      <p>{{ lesson.practice|length }} practice problems with hints, then a {{ lesson.quiz|length }}-question quiz with
+        instant feedback. No sign-up needed: your progress saves in this browser.</p>
+      <a class="btn" href="/#/learn/{{ lesson.id }}">Practice this lesson</a>
+    </section>
+
+    <div class="pager">
+      {% if prev %}<a class="prev" href="/lessons/{{ prev.id }}"><small>Previous lesson</small>{{ prev.name }}</a>{% endif %}
+      {% if next %}<a class="next" href="/lessons/{{ next.id }}"><small>Next lesson</small>{{ next.name }}</a>{% endif %}
+    </div>
+{% endblock %}
