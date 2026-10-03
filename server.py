@@ -32,6 +32,7 @@ import settings
 import video_ai
 import videos
 from lessons import LESSON_IDS, LESSONS
+from search_terms import SEARCH
 
 BASE = Path(__file__).parent
 DB_PATH = BASE / "calclearners.db"
@@ -522,9 +523,12 @@ def lesson_page(lesson_id):
     if not lesson:
         abort(404)
     i = LESSONS.index(lesson)
+    title, also_called = SEARCH[lesson_id]
     return render_template(
         "lesson.html",
         lesson=lesson,
+        title=title,
+        also_called=also_called,
         unit=unit_label(lesson),
         prereqs=[LESSON_BY_ID[p] for p in lesson["prereqs"] if p in LESSON_BY_ID],
         prev=LESSONS[i - 1] if i else None,

@@ -574,6 +574,8 @@ main.legal { width: 100%; max-width: 808px; margin: 0 auto; padding: 40px var(--
 .lesson-page .crumbs { margin-bottom: 10px; }
 .lesson-page .card h2 { margin: 0 0 10px; font-size: 21px; font-weight: 600; letter-spacing: -0.01em; }
 .lesson-page .card .btn { margin-top: 4px; }
+.lesson-page summary { padding: 6px 0; color: var(--accent); font-weight: 700; cursor: pointer; }
+.lesson-page details .box { margin-top: 2px; }
 .lesson-list { padding-left: 0; list-style: none; }
 .lesson-list a { font-weight: 700; }
 

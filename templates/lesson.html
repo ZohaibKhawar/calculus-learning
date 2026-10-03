@@ -1,7 +1,7 @@
 {% extends "page.html" %}
 {# Lesson text is written by us and carries its own <b>/<i> and LaTeX, so it goes in as-is ("safe"), the way app.js shows it. #}
-{% block title %}{{ lesson.name }}: formulas, worked example and common mistakes{% endblock %}
-{% block description %}{{ lesson.name }} explained in about {{ lesson.minutes }} minutes: the big idea, key formulas, a worked example and the mistakes to avoid. Free, with practice problems and a quiz.{% endblock %}
+{% block title %}{{ title }}{% endblock %}
+{% block description %}{{ lesson.name }}{% if also_called %} ({{ also_called|join(', ') }}){% endif %} explained: the key formulas, a worked example, common mistakes and {{ lesson.practice|length }} practice problems with hints and answers. Free, no sign-up.{% endblock %}
 {% block main %}
     <div class="crumbs">
       <a href="/lessons">All lessons</a>
@@ -10,6 +10,7 @@
       <span>About {{ lesson.minutes }} min</span>
     </div>
     <h1>{{ lesson.name }}</h1>
+    {% if also_called %}<p class="muted">Also called {{ also_called|join(", ") }}.</p>{% endif %}
 
     {% if prereqs %}
     <div class="card prereq">
@@ -48,11 +49,23 @@
       </ul>
     </section>
 
+    <section id="s-practice" class="card">
+      <h2>Practice problems</h2>
+      <p class="muted">Give each one an honest try on paper first.</p>
+      {% for p in lesson.practice %}
+      <div class="prob">
+        <p><b>{{ loop.index }}.</b> {{ p.q|safe }}</p>
+        <details><summary>Hint</summary><div class="box hint">{{ p.hint|safe }}</div></details>
+        <details><summary>Answer</summary><div class="box ans">{{ p.a|safe }}</div></details>
+      </div>
+      {% endfor %}
+    </section>
+
     <section class="card hl">
-      <h2>Now try it yourself</h2>
-      <p>{{ lesson.practice|length }} practice problems with hints, then a {{ lesson.quiz|length }}-question quiz with
-        instant feedback. No sign-up needed: your progress saves in this browser.</p>
-      <a class="btn" href="/#/learn/{{ lesson.id }}">Practice this lesson</a>
+      <h2>Check yourself</h2>
+      <p>Take the {{ lesson.quiz|length }}-question quiz with instant feedback, keep notes and track your progress.
+        No sign-up needed: it all saves in this browser.</p>
+      <a class="btn" href="/#/learn/{{ lesson.id }}">Take the quiz</a>
     </section>
 
     <div class="pager">
