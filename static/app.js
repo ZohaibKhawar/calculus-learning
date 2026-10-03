@@ -141,7 +141,8 @@ const STYLES = [
 const FEEDBACK_QUESTIONS = [
   "If you made this website, what changes would you make?",
   "Which topic was hardest to find help for?",
-  "What would make the forum more useful?"
+  "What would make the forum more useful?",
+  "Anything else? Privacy requests (like deleting your account) go here too."
 ];
 
 // ---------- Weeks ----------
@@ -671,9 +672,8 @@ async function dashboard() {
 
     <h3>Account</h3>
     <div class="card">
-      <p class="account-line">Signed in as <b>${esc(ME.username ? "@" + ME.username : ME.email)}</b>
-        ${ME.username && ME.email ? `<small>${esc(ME.email)}</small>` : ""}
-        ${ME.google ? `<small>Google sign-in is linked</small>` : ""}</p>
+      <p class="account-line">Signed in ${ME.username ? `as <b>@${esc(ME.username)}</b>` : "with <b>Google</b>"}
+        ${ME.username && ME.google ? `<small>Google sign-in is linked</small>` : ""}</p>
       <label for="name">Display name <small>(shown on your forum posts)</small></label>
       <div class="row"><input id="name" value="${esc(ME.name)}" maxlength="40" placeholder="Anonymous learner">
         <button id="save-name">Save name</button></div>
@@ -1631,11 +1631,11 @@ function startGraph() {
 }
 
 // ==================================================
-// SIGN IN: username or email + password, or Google
+// SIGN IN: username + password, or Google
 // ==================================================
 const Auth = (() => {
-  let config = { google_client_id: "", turnstile_site_key: "", email_ready: false };
-  let view = "signin", pendingEmail = "", captcha = null, googleReady = false;
+  let config = { google_client_id: "", turnstile_site_key: "" };
+  let view = "signin", captcha = null, googleReady = false;
   const card = $("#auth-card");
 
   function loadScript(src) {
@@ -1662,78 +1662,42 @@ const Auth = (() => {
   const captchaSlot = () => config.turnstile_site_key ? `<div class="captcha-slot" id="captcha-slot"></div>` : "";
   const errorBox = `<p class="form-error" role="alert"></p>`;
   const NAME = 'autocapitalize="none" autocorrect="off" spellcheck="false" required';
+  const legal = `<p class="auth-alt"><small>By signing in or creating an account you agree to our
+    <a href="terms.html">Terms</a> and <a href="privacy.html">Privacy Policy</a>.</small></p>`;
 
   const VIEWS = {
     signin: () => `
       <h2>Sign in</h2>
       ${googleSlot()}
       <form id="auth-form" novalidate>
-        ${field("a-login", "Username or email", `name="login" autocomplete="username" ${NAME}`)}
+        ${field("a-login", "Username", `name="login" autocomplete="username" ${NAME}`)}
         ${field("a-pass", "Password", 'name="password" type="password" autocomplete="current-password" required')}
         ${errorBox}
         <button type="submit" class="btn-block">Sign in</button>
       </form>
-      <p class="auth-alt"><button type="button" class="link" data-auth="forgot">Forgot your password?</button></p>
+      ${legal}
       <p class="auth-switch">New to CalcLearners? <button type="button" class="link" data-auth="signup">Create an account</button></p>`,
 
     signup: () => `
       <h2>Create your account</h2>
       ${googleSlot()}
-      ${config.email_ready ? `<form id="auth-form" novalidate>
+      <form id="auth-form" novalidate>
         ${field("a-user", "Username", `name="username" autocomplete="username" maxlength="20" ${NAME}`,
-          "2 to 20 letters, numbers or _. You can sign in with it.")}
-        ${field("a-email", "Email", 'name="email" type="email" autocomplete="email" required',
-          "We'll email you a code to confirm it.")}
+          "2 to 20 letters, numbers or _. You sign in with it.")}
         ${field("a-pass", "Password", 'name="password" type="password" autocomplete="new-password" required',
-          "At least 8 characters.")}
+          "At least 8 characters. Keep it safe: we don't ask for an email, so it can't be reset.")}
         ${captchaSlot()}
         ${errorBox}
         <button type="submit" class="btn-block">Create account</button>
-      </form>` : `${errorBox}<p class="muted">Signing up with an email isn't switched on yet. Use Continue with Google.</p>`}
-      <p class="auth-switch">Already have an account? <button type="button" class="link" data-auth="signin">Sign in</button></p>`,
-
-    verify: () => `
-      <h2>Check your email</h2>
-      <p>We sent a 6-digit code to <b>${esc(pendingEmail)}</b>. It expires in 15 minutes.</p>
-      <form id="auth-form" novalidate>
-        ${field("a-code", "Verification code", 'name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required')}
-        ${errorBox}
-        <button type="submit" class="btn-block">Verify email</button>
       </form>
-      <p class="auth-alt">No email? Check your spam folder, or <button type="button" class="link" id="resend">send a new code</button>.</p>
-      <p class="auth-switch">Wrong email address? <button type="button" class="link" data-auth="signup">Start again</button></p>`,
-
-    forgot: () => `
-      <h2>Reset your password</h2>
-      <p>Enter your username or email. If it matches an account, we'll email that account a code to set a new password.</p>
-      <form id="auth-form" novalidate>
-        ${field("a-login", "Username or email", `name="login" autocomplete="username" ${NAME}`)}
-        ${captchaSlot()}
-        ${errorBox}
-        <button type="submit" class="btn-block">Email me a code</button>
-      </form>
-      <p class="auth-switch">Remembered it? <button type="button" class="link" data-auth="signin">Sign in</button></p>`,
-
-    reset: () => `
-      <h2>Choose a new password</h2>
-      <p>If that account exists, we've emailed a 6-digit code to its address. It expires in 15 minutes.</p>
-      <form id="auth-form" novalidate>
-        ${field("a-code", "Reset code", 'name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required')}
-        ${field("a-pass", "New password", 'name="password" type="password" autocomplete="new-password" required',
-          "At least 8 characters. Signing in with it signs you out everywhere else.")}
-        ${errorBox}
-        <button type="submit" class="btn-block">Save new password</button>
-      </form>
-      <p class="auth-switch">No email? <button type="button" class="link" data-auth="forgot">Try again</button></p>`
+      ${legal}
+      <p class="auth-switch">Already have an account? <button type="button" class="link" data-auth="signin">Sign in</button></p>`
   };
 
   // What each form sends to the server.
   const SUBMIT = {
     signin: f => ["/auth/login", { login: f.login.value, password: f.password.value }],
-    signup: f => ["/auth/signup", { username: f.username.value, email: f.email.value, password: f.password.value, turnstile: token() }],
-    verify: f => ["/auth/verify", { code: f.code.value }],
-    forgot: f => ["/auth/forgot", { login: f.login.value, turnstile: token() }],
-    reset: f => ["/auth/reset", { code: f.code.value, password: f.password.value }]
+    signup: f => ["/auth/signup", { username: f.username.value, password: f.password.value, turnstile: token() }]
   };
 
   // Follow the site's light/dark switch, not the computer's setting.
@@ -1773,10 +1737,8 @@ const Auth = (() => {
     btn.disabled = true;
     btn.textContent = "One moment…";
     try {
-      const r = await api(path, { method: "POST", body: data });
-      if (r.next === "verify") { pendingEmail = r.email; render("verify"); }
-      else if (r.next === "reset") render("reset");
-      else await signedIn();
+      await api(path, { method: "POST", body: data });
+      await signedIn();
     } catch (err) {
       showError(err.message);
       if (captcha !== null && window.turnstile) turnstile.reset(captcha);
@@ -1821,16 +1783,9 @@ const Auth = (() => {
     } catch (e) { /* the server explains if the check is missing */ }
   }
 
-  card.addEventListener("click", async e => {
+  card.addEventListener("click", e => {
     const b = e.target.closest("[data-auth]");
-    if (b) { render(b.dataset.auth); return; }
-    if (e.target.id === "resend") {
-      try {
-        const r = await api("/auth/resend", { method: "POST" });
-        pendingEmail = r.email;
-        toast("We sent a new code");
-      } catch (err) { showError(err.message); }
-    }
+    if (b) render(b.dataset.auth);
   });
 
   function show(which = "signin", message = "") {

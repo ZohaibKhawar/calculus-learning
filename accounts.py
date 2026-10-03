@@ -1,21 +1,16 @@
-"""Sign-in helpers for CalcLearners: settings, passwords, email codes, and the
+"""Sign-in helpers for CalcLearners: settings, passwords, and the
 Google and Cloudflare Turnstile checks. The routes that use these live in server.py.
 
 Settings come from environment variables or from a `secrets.env` file next to this
 one (KEY=value per line, git-ignored). See secrets.env.example for the list.
 """
-import hashlib
-import hmac
 import json
 import os
 import re
 import secrets
-import smtplib
-import ssl
 import time
 import urllib.parse
 import urllib.request
-from email.message import EmailMessage
 from pathlib import Path
 
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -45,18 +40,10 @@ def setting(name, default=""):
 GOOGLE_CLIENT_ID = setting("GOOGLE_CLIENT_ID")
 TURNSTILE_SITE_KEY = setting("TURNSTILE_SITE_KEY")
 TURNSTILE_SECRET = setting("TURNSTILE_SECRET_KEY")
-SMTP_HOST = setting("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(setting("SMTP_PORT", "587"))
-SMTP_USER = setting("SMTP_USER")
-SMTP_PASSWORD = setting("SMTP_PASSWORD")
-MAIL_FROM = setting("MAIL_FROM") or SMTP_USER
 ADMIN_USERS = {u.strip().lower() for u in setting("ADMIN_USERS").split(",") if u.strip()}
 
-DEV = False  # server.py sets this for local runs: email codes are printed instead of sent
-
-# ---------- Usernames, emails, passwords ----------
+# ---------- Usernames, passwords ----------
 USERNAME_RE = re.compile(r"^[a-z0-9_]{2,20}$")
-EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]+\.[^@\s]{2,}$")
 TOO_COMMON = {
     "password", "password1", "password12", "password123", "passw0rd", "12345678", "123456789",
     "1234567890", "11111111", "00000000", "87654321", "qwertyuiop", "qwerty123", "iloveyou",
@@ -71,19 +58,13 @@ def username_problem(username):
     return None
 
 
-def email_problem(email):
-    if len(email) > 200 or not EMAIL_RE.match(email):
-        return "Enter a valid email address, like name@example.com."
-    return None
-
-
-def password_problem(password, username="", email=""):
+def password_problem(password, username=""):
     if len(password) < 8:
         return "Use at least 8 characters for your password."
     if len(password) > 200:
         return "That password is too long (200 characters at most)."
     lowered = password.lower()
-    if lowered in TOO_COMMON or lowered in {username.lower(), email.lower(), email.split("@")[0].lower()}:
+    if lowered in TOO_COMMON or lowered == username.lower():
         return "That password is too easy to guess. Try a longer phrase or mix in numbers and symbols."
     return None
 
@@ -93,66 +74,6 @@ check_password = check_password_hash
 # Checked against when the account doesn't exist, so a wrong username takes as long
 # as a wrong password and can't be told apart by timing.
 DUMMY_HASH = generate_password_hash(secrets.token_hex(16))
-
-
-def mask_email(email):
-    name, _, domain = email.partition("@")
-    return f"{name[:1]}{'*' * max(2, len(name) - 1)}@{domain}"
-
-
-# ---------- One-time email codes ----------
-CODE_TTL = 15 * 60
-CODE_TRIES = 5
-
-
-def new_code():
-    return f"{secrets.randbelow(10 ** 6):06d}"
-
-
-def code_digest(code, key):
-    """Codes are stored as HMACs, so a leaked database doesn't reveal live codes."""
-    return hmac.new(key.encode(), code.encode(), hashlib.sha256).hexdigest()
-
-
-def same_digest(a, b):
-    return hmac.compare_digest(a or "", b or "")
-
-
-def email_ready():
-    return bool(SMTP_HOST and SMTP_USER and SMTP_PASSWORD) or DEV
-
-
-def send_email(to, subject, text):
-    if DEV and not (SMTP_USER and SMTP_PASSWORD):
-        print(f"\n[email to {to}] {subject}\n{text}\n", flush=True)
-        return
-    msg = EmailMessage()
-    msg["From"] = f"CalcLearners <{MAIL_FROM}>"
-    msg["To"] = to
-    msg["Subject"] = subject
-    msg.set_content(text)
-    context = ssl.create_default_context()
-    if SMTP_PORT == 465:
-        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=20, context=context) as smtp:
-            smtp.login(SMTP_USER, SMTP_PASSWORD)
-            smtp.send_message(msg)
-    else:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as smtp:
-            smtp.starttls(context=context)
-            smtp.login(SMTP_USER, SMTP_PASSWORD)
-            smtp.send_message(msg)
-
-
-def code_email(code, purpose):
-    if purpose == "verify":
-        return ("Your CalcLearners code: " + code,
-                f"Your CalcLearners verification code is {code}\n\n"
-                "Enter it on the sign-up page to finish creating your account. It expires in 15 minutes.\n\n"
-                "If you didn't sign up, you can ignore this email.")
-    return ("Reset your CalcLearners password: " + code,
-            f"Your CalcLearners password reset code is {code}\n\n"
-            "Enter it on the reset page to choose a new password. It expires in 15 minutes.\n\n"
-            "If you didn't ask to reset your password, you can ignore this email. Your password hasn't changed.")
 
 
 # ---------- Outside checks ----------
@@ -177,7 +98,7 @@ def turnstile_ok(token, ip):
 
 
 def google_identity(credential):
-    """Check a Google sign-in token. Returns {sub, email, name} or None."""
+    """Check a Google sign-in token. Returns {sub, name} or None."""
     if not GOOGLE_CLIENT_ID or not credential or len(credential) > 4096:
         return None
     url = "https://oauth2.googleapis.com/tokeninfo?" + urllib.parse.urlencode({"id_token": credential})
@@ -188,7 +109,6 @@ def google_identity(credential):
         return None
     if (info.get("aud") != GOOGLE_CLIENT_ID
             or info.get("iss") not in ("accounts.google.com", "https://accounts.google.com")
-            or str(info.get("email_verified")).lower() != "true"
             or int(info.get("exp", 0)) < time.time()):
         return None
-    return {"sub": info["sub"], "email": info["email"].lower(), "name": (info.get("given_name") or "")[:40]}
+    return {"sub": info["sub"], "name": (info.get("given_name") or "")[:40]}

@@ -539,13 +539,15 @@ button.link {
 }
 .site-foot .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 28px; }
 .site-foot nav { display: flex; flex-wrap: wrap; gap: 4px 20px; margin-left: auto; }
+.site-foot .foot-legal { margin-left: 0; }
 .site-foot a { display: inline-flex; align-items: center; min-height: 44px; font-weight: 700; }
 
 /* ---------- Sign in ---------- */
 /* Signed out: only the logo and the theme switch stay in the header. */
 body.signed-out .nav,
 body.signed-out .top-tools > :not(#theme),
-body.signed-out .site-foot nav { display: none !important; }
+body.signed-out .site-foot nav:not(.foot-legal) { display: none !important; }
+body.signed-out .site-foot .foot-legal { margin-left: auto; }
 body.signed-out #theme { display: inline-grid; }
 body.signed-out .site-foot { margin-top: auto; }
 
@@ -593,6 +595,17 @@ body.signed-out .site-foot { margin-top: auto; }
 .account-actions { margin-top: 14px; }
 .nav-signout { display: none; }
 .site-foot button.link { min-height: 44px; }
+
+/* ---------- Terms, privacy and cookie pages ---------- */
+main.legal { width: 100%; max-width: 808px; margin: 0 auto; padding: 40px var(--gr) 72px var(--gl); }
+.legal h1 { margin: 0 0 6px; font-size: clamp(34px, 5vw, 48px); font-weight: 800; letter-spacing: -0.03em; }
+.legal h2 { margin: 36px 0 10px; font-size: 24px; }
+.legal .updated { color: var(--graphite); }
+.legal li { margin-bottom: 6px; }
+.legal-table { overflow-x: auto; }
+.legal table { width: 100%; min-width: 540px; border-collapse: collapse; font-size: 15px; }
+.legal th, .legal td { padding: 10px 14px 10px 0; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
+.legal td code { white-space: nowrap; }
 
 /* ---------- Learning app layout ---------- */
 #app { flex: 1; display: flex; align-items: flex-start; width: 100%; }
