@@ -25,7 +25,7 @@ from flask import Flask, abort, g, jsonify, redirect, request, send_from_directo
 from werkzeug.exceptions import HTTPException, TooManyRequests
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-import accounts
+import settings
 import video_ai
 import videos
 from lessons import LESSON_IDS, LESSONS
@@ -198,26 +198,25 @@ def init_db():
         # Databases made before videos existed lack this column.
         if "video_id" not in [r[1] for r in conn.execute("PRAGMA table_info(uploads)")]:
             conn.execute("ALTER TABLE uploads ADD COLUMN video_id TEXT")
-        # Sign-in columns. A users row starts as an anonymous visitor (older versions)
-        # and becomes an account once it has a username or a Google login.
+        # Columns added after the first version. `username` is left over from when the site
+        # had accounts: it now only marks which visitors are admins (see ADMIN_USERS).
         have = [r[1] for r in conn.execute("PRAGMA table_info(users)")]
-        for column, kind in [("username", "TEXT"), ("password_hash", "TEXT"),
-                             ("google_sub", "TEXT"), ("active", "INTEGER NOT NULL DEFAULT 0"),
-                             ("session_ver", "INTEGER NOT NULL DEFAULT 0"), ("blocked", "INTEGER NOT NULL DEFAULT 0")]:
+        for column, kind in [("username", "TEXT"), ("blocked", "INTEGER NOT NULL DEFAULT 0")]:
             if column not in have:
                 conn.execute(f"ALTER TABLE users ADD COLUMN {column} {kind}")  # fixed names from this list
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_username ON users(username)")
-        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_google ON users(google_sub)")
-        # Earlier versions confirmed sign-ups by email. Forget every stored address and
-        # code, and free the usernames of sign-ups that never got confirmed.
+        # Older versions had sign-in (email codes, passwords, Google). Forget all of it.
         conn.execute("DROP TABLE IF EXISTS email_codes")
         conn.execute("DROP INDEX IF EXISTS users_email")
-        if "email" in have:
-            try:
-                conn.execute("ALTER TABLE users DROP COLUMN email")
-            except sqlite3.OperationalError:  # SQLite before 3.35 can't drop a column
-                conn.execute("UPDATE users SET email = NULL")
-        conn.execute("UPDATE users SET username = NULL, password_hash = NULL WHERE active = 0")
+        conn.execute("DROP INDEX IF EXISTS users_google")
+        for column in ("email", "password_hash", "google_sub"):
+            if column in have:
+                try:
+                    conn.execute(f"ALTER TABLE users DROP COLUMN {column}")  # fixed names from this list
+                except sqlite3.OperationalError:  # SQLite before 3.35 can't drop a column
+                    conn.execute(f"UPDATE users SET {column} = NULL")
+        conn.execute("UPDATE users SET username = NULL WHERE username NOT IN (SELECT value FROM json_each(?))",
+                     (json.dumps(sorted(settings.ADMIN_USERS)),))
         # A restart kills any lesson that was still being generated.
         conn.execute("UPDATE videos SET status = 'failed', message = ? WHERE status = 'generating'",
                      ("The server restarted while building this lesson. Press Retry.",))
@@ -262,57 +261,40 @@ def limit(rule, who, max_hits, seconds, message="You're doing that too often."):
 
 
 # ---------- Identity ----------
-# Everyone signs in. The signed, HttpOnly cookie holds the account ID plus the
-# account's session version: bumping that version (block) signs out every
-# device at once.
-def account(uid):
-    return one("""SELECT id, name, username, google_sub, active, blocked, session_ver
-                  FROM users WHERE id = ?""", (uid,)) if uid else None
-
-
-def is_account(u):
-    return bool(u and (u["username"] or u["google_sub"]))
-
-
-def current_user():
-    """Return the signed-in account's ID, or answer 401 so the page shows the sign-in screen."""
-    u = account(session.get("uid"))
-    if not is_account(u) or not u["active"] or session.get("ver") != u["session_ver"]:
-        abort(401, "Please sign in.")
-    if u["blocked"]:
-        session.clear()
-        abort(403, "This account has been blocked.")
-    return u["id"]
-
-
-def is_admin(uid):
-    u = account(uid)
-    return bool(u and u["username"] and u["username"] in accounts.ADMIN_USERS)
-
-
-def sign_in(uid):
-    """Start a fresh session for this account (a new cookie, so an old one can't be reused)."""
-    ver = one("SELECT session_ver FROM users WHERE id = ?", (uid,))["session_ver"]
-    session.clear()
-    session.permanent = True
-    session["uid"] = uid
-    session["ver"] = ver
-
-
-# Before accounts, each browser had an anonymous ID with its own progress: first in
-# localStorage (sent as X-User), later in this same cookie. When that browser creates
-# an account, the account takes over the anonymous row so the progress carries over.
+# There is no sign-in. A browser's first API call gets a random visitor ID, kept in a
+# signed, HttpOnly cookie; its progress, notes and posts belong to that ID.
+# Before cookies, the browser made its own ID and sent it as X-User. A browser that
+# still has one of those can claim it once, so nobody loses their progress; brand-new
+# IDs are only ever made here, and are rate limited per IP.
 LEGACY_ID_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 
 
-def previous_visitor():
-    """The anonymous visitor ID this browser used before signing up, if it has one."""
-    for uid in (session.get("uid"), request.headers.get("X-User", "")):
-        if uid and LEGACY_ID_RE.match(uid):
-            u = account(uid)
-            if u and not is_account(u):
-                return uid
-    return None
+def current_user():
+    """Return this browser's visitor ID from its signed cookie, issuing a new one if needed."""
+    uid = session.get("uid")
+    u = one("SELECT blocked FROM users WHERE id = ?", (uid,)) if uid else None
+    if not u:
+        legacy = request.headers.get("X-User", "")
+        u = one("SELECT blocked FROM users WHERE id = ?", (legacy,)) if LEGACY_ID_RE.match(legacy) else None
+        if u:
+            uid = legacy
+        else:
+            limit("new-id", client_ip(), 30, 3600, "Too many new visitors from your network.")
+            limit("new-id", client_ip(), 200, 86400, "Too many new visitors from your network.")
+            uid = secrets.token_urlsafe(24)
+            run("INSERT INTO users (id) VALUES (?)", (uid,))
+            u = {"blocked": 0}
+        session.permanent = True
+        session["uid"] = uid
+    if u["blocked"]:
+        abort(403, "This browser has been blocked from CalcLearners.")
+    return uid
+
+
+def is_admin(uid):
+    """Admins are the browsers that were signed in under an ADMIN_USERS name when the site had accounts."""
+    u = one("SELECT username FROM users WHERE id = ?", (uid,))
+    return bool(u and u["username"] and u["username"] in settings.ADMIN_USERS)
 
 
 # ---------- Request guards & security headers ----------
@@ -337,13 +319,11 @@ def guard_api():
 
 CSP = "; ".join([
     "default-src 'self'",
-    # Google sign-in and Cloudflare's bot check load their own scripts and frames.
-    "script-src 'self' https://cdn.jsdelivr.net https://accounts.google.com/gsi/client https://challenges.cloudflare.com",
-    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com https://accounts.google.com/gsi/style",
+    "script-src 'self' https://cdn.jsdelivr.net",
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net",
-    "img-src 'self' data: https://*.googleusercontent.com",
-    "frame-src https://accounts.google.com https://challenges.cloudflare.com",
-    "connect-src 'self' http://localhost:5000 https://accounts.google.com/gsi/",
+    "img-src 'self' data:",
+    "connect-src 'self' http://localhost:5000",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -358,7 +338,7 @@ def security_headers(resp):
     resp.headers["X-Frame-Options"] = "DENY"
     resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     resp.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
-    resp.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"  # Google's sign-in popup
+    resp.headers["Cross-Origin-Opener-Policy"] = "same-origin"
     if request.is_secure:
         resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     if request.path.startswith("/api/"):
@@ -405,7 +385,7 @@ def allow_local_probe(resp):
     """Let a copy of the page opened another way (e.g. VS Code Live Server) detect
     that server.py is running, so it can switch over to http://localhost:5000."""
     origin = request.headers.get("Origin", "")
-    if request.path == "/api/auth/config" and LOCAL_ORIGIN.match(origin):
+    if request.path == "/api/lessons" and LOCAL_ORIGIN.match(origin):
         resp.headers["Access-Control-Allow-Origin"] = origin
         resp.headers["Vary"] = "Origin"
     return resp
@@ -450,97 +430,9 @@ def index():
     return send_from_directory(app.static_folder, "index.html")
 
 
-# ---------- Accounts ----------
-def require_human():
-    if not accounts.turnstile_ok(str(body().get("turnstile", "")), client_ip()):
-        abort(400, "Please complete the check that you're not a robot, then try again.")
-
-
-def login_name(data):
-    return str(data.get("login", "")).strip().lower()[:200]
-
-
-@app.get("/api/auth/config")
-def auth_config():
-    """What the sign-in page needs to show (all public values)."""
-    return jsonify(google_client_id=accounts.GOOGLE_CLIENT_ID,
-                   turnstile_site_key=accounts.TURNSTILE_SITE_KEY)
-
-
-@app.post("/api/auth/signup")
-def signup():
-    limit("signup", client_ip(), 5, 3600, "Lots of sign-ups are coming from your network.")
-    limit("signup", client_ip(), 20, 86400, "Lots of sign-ups are coming from your network.")
-    data = body()
-    username = str(data.get("username", "")).strip().lower()
-    password = str(data.get("password", ""))
-    for problem in (accounts.username_problem(username), accounts.password_problem(password, username)):
-        if problem:
-            abort(400, problem)
-    require_human()
-    if one("SELECT 1 FROM users WHERE username = ?", (username,)):
-        abort(409, "That username is taken. Try another one.")
-
-    uid = previous_visitor() or secrets.token_urlsafe(24)
-    run("INSERT OR IGNORE INTO users (id) VALUES (?)", (uid,))
-    run("""UPDATE users SET username = ?, password_hash = ?, active = 1,
-                            name = CASE WHEN name = '' THEN ? ELSE name END
-           WHERE id = ?""", (username, accounts.hash_password(password), username, uid))
-    sign_in(uid)
-    return jsonify(ok=True)
-
-
-@app.post("/api/auth/login")
-def login():
-    data = body()
-    who = login_name(data)
-    password = str(data.get("password", ""))[:200]
-    limit("login-ip", client_ip(), 20, 600, "Too many sign-in attempts from your network.")
-    # Tight per account *and* network, so a stranger guessing wrong can't lock you out;
-    # a looser cap per account stops slow guessing spread over many networks.
-    limit("login", f"{who or '-'}|{client_ip()}", 10, 900, "Too many sign-in attempts for this account.")
-    limit("login-acct", who or "-", 100, 3600, "Too many sign-in attempts for this account.")
-    u = one("SELECT id, password_hash, blocked FROM users WHERE username = ?", (who,)) if who else None
-    # Always run one password check, so unknown names take as long as wrong passwords.
-    ok = accounts.check_password((u and u["password_hash"]) or accounts.DUMMY_HASH, password)
-    if not (u and u["password_hash"] and ok):
-        abort(400, "That username or password isn't right.")
-    if u["blocked"]:
-        abort(403, "This account has been blocked.")
-    sign_in(u["id"])
-    return jsonify(ok=True)
-
-
-@app.post("/api/auth/google")
-def google_login():
-    limit("google", client_ip(), 30, 3600, "Too many sign-in attempts from your network.")
-    info = accounts.google_identity(str(body().get("credential", "")))
-    if not info:
-        abort(400, "Google sign-in didn't work. Please try again.")
-    u = one("SELECT id, blocked FROM users WHERE google_sub = ?", (info["sub"],))
-    if not u:
-        uid = previous_visitor() or secrets.token_urlsafe(24)
-        run("INSERT OR IGNORE INTO users (id) VALUES (?)", (uid,))
-        run("""UPDATE users SET google_sub = ?, active = 1,
-                                name = CASE WHEN name = '' THEN ? ELSE name END
-               WHERE id = ?""", (info["sub"], info["name"] or "Learner", uid))
-        u = {"id": uid, "blocked": 0}
-    if u["blocked"]:
-        abort(403, "This account has been blocked.")
-    sign_in(u["id"])
-    return jsonify(ok=True)
-
-
-@app.post("/api/auth/logout")
-def logout():
-    session.clear()
-    return jsonify(ok=True)
-
-
 # ---------- Lessons ----------
 @app.get("/api/lessons")
 def lessons():
-    current_user()
     return jsonify(LESSONS)
 
 
@@ -548,7 +440,7 @@ def lessons():
 @app.get("/api/me")
 def me():
     uid = current_user()
-    user = one("SELECT name, last_topic, username, google_sub FROM users WHERE id = ?", (uid,))
+    user = one("SELECT name, last_topic FROM users WHERE id = ?", (uid,))
     # Only report topics that still exist (lessons get reorganized over time).
     quiz = {}
     for r in rows("""SELECT topic_id, score, total FROM quiz_scores
@@ -562,8 +454,6 @@ def me():
         q["attempts"] += 1
     return jsonify(
         name=user["name"],
-        username=user["username"],
-        google=bool(user["google_sub"]),
         admin=is_admin(uid),
         last_topic=user["last_topic"] if user["last_topic"] in LESSON_IDS else None,
         done=[r["topic_id"] for r in rows("SELECT topic_id FROM progress WHERE user_id = ?", (uid,))
@@ -645,6 +535,48 @@ def reset():
                 "DELETE FROM video_progress WHERE user_id = ?",
                 "UPDATE users SET last_topic = NULL WHERE id = ?"):
         run(sql, (uid,))
+    return jsonify(ok=True)
+
+
+@app.post("/api/me/delete")
+def delete_my_data():
+    """Delete everything saved for this browser's visitor ID, then forget the ID."""
+    uid = current_user()
+    limit("delete-me", uid, 5, 3600, "Too many tries at deleting your data.")
+    limit("delete-me-ip", client_ip(), 20, 3600, "Too many tries at deleting data from your network.")
+    # It can't be undone, so the page asks for a typed word first.
+    if str(body().get("confirm", "")).strip().upper() != "DELETE":
+        abort(400, "Type DELETE to confirm.")
+
+    mine = rows("SELECT stored_name, video_id FROM uploads WHERE user_id = ?", (uid,))
+    # One fixed statement per table, as in /api/reset. Forum posts go the same way as in block_author.
+    for sql in ("DELETE FROM progress WHERE user_id = ?",
+                "DELETE FROM quiz_scores WHERE user_id = ?",
+                "DELETE FROM notes WHERE user_id = ?",
+                "DELETE FROM activity WHERE user_id = ?",
+                "DELETE FROM video_progress WHERE user_id = ?",
+                "DELETE FROM feedback WHERE user_id = ?",
+                "DELETE FROM uploads WHERE user_id = ?",
+                "DELETE FROM votes WHERE kind = 'a' AND target_id IN (SELECT id FROM answers WHERE user_id = ?)",
+                """DELETE FROM votes WHERE kind = 'a' AND target_id IN
+                   (SELECT a.id FROM answers a JOIN questions q ON q.id = a.question_id WHERE q.user_id = ?)""",
+                "DELETE FROM votes WHERE kind = 'q' AND target_id IN (SELECT id FROM questions WHERE user_id = ?)",
+                "DELETE FROM votes WHERE user_id = ?",
+                "DELETE FROM answers WHERE user_id = ?",
+                "DELETE FROM questions WHERE user_id = ?"):
+        run(sql, (uid,))
+    # AI lessons and the PDFs kept for them go too, unless someone else's upload still uses them.
+    for video_id in {u["video_id"] for u in mine if u["video_id"]}:
+        run("DELETE FROM videos WHERE id = ? AND NOT EXISTS (SELECT 1 FROM uploads WHERE video_id = ?)",
+            (video_id, video_id))
+    for stored in {u["stored_name"] for u in mine}:
+        if not one("SELECT 1 FROM videos WHERE source_file = ?", (stored,)):
+            try:
+                (UPLOADS / stored).unlink(missing_ok=True)
+            except OSError:  # still open (a lesson being built from it): don't let that stop the deletion
+                app.logger.warning("Couldn't remove upload %s of a deleted visitor", stored)
+    run("DELETE FROM users WHERE id = ?", (uid,))
+    session.clear()
     return jsonify(ok=True)
 
 
@@ -766,7 +698,7 @@ def block_author():
     """Admins: block the author of a post and remove everything they posted."""
     uid = current_user()
     if not is_admin(uid):
-        abort(403, "Only admins can block accounts.")
+        abort(403, "Only admins can block people.")
     data = body()
     owner_sql = {"q": "SELECT user_id FROM questions WHERE id = ?",
                  "a": "SELECT user_id FROM answers WHERE id = ?"}.get(data.get("kind")) or abort(400, "Unknown post.")
@@ -777,7 +709,7 @@ def block_author():
     author = (one(owner_sql, (target,)) or abort(404, "Post not found."))["user_id"]
     if author == uid:
         abort(400, "You can't block yourself.")
-    run("UPDATE users SET blocked = 1, session_ver = session_ver + 1 WHERE id = ?", (author,))
+    run("UPDATE users SET blocked = 1 WHERE id = ?", (author,))
     for sql in ("DELETE FROM votes WHERE kind = 'a' AND target_id IN (SELECT id FROM answers WHERE user_id = ?)",
                 """DELETE FROM votes WHERE kind = 'a' AND target_id IN
                    (SELECT a.id FROM answers a JOIN questions q ON q.id = a.question_id WHERE q.user_id = ?)""",

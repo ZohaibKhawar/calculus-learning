@@ -38,76 +38,71 @@
 
     <h2>The short version</h2>
     <ul>
-      <li>You don't need an email address to use CalcLearners, and we never ask for your full name, phone
-        number or payment details.</li>
-      <li>We keep what the site needs to work: your sign-in details, your study progress and what you post.</li>
+      <li>There are no accounts. You never give us an email address, a password, your name, a phone number or
+        payment details.</li>
+      <li>Your browser gets a random ID in a cookie, and your progress and posts are saved against that ID.</li>
       <li>There are no ads and no analytics trackers, and we never sell your information.</li>
-      <li>A few outside services help run the site (hosting, Google sign-in, a bot check, fonts and optional
-        AI lessons). They are listed in section 3.</li>
+      <li>A few outside services help run the site (hosting, fonts, code libraries and optional AI lessons).
+        They are listed in section 3.</li>
     </ul>
 
     <h2>1. What we collect</h2>
     <ul>
-      <li><b>Account details.</b> A username and a password if you sign up that way. Your password is stored
-        only as a salted hash, so we can't read it. If you use "Continue with Google", we store the account ID
-        number Google gives us and your first name as a starting display name, which appears on your forum
-        posts until you change it. Google's sign-in token also contains your email address: we use the token
-        to confirm it is genuine and do not save the address.</li>
-      <li><b>Display name.</b> The name shown on your forum posts. You choose it and can change it at any time.</li>
+      <li><b>A visitor ID.</b> The first time your browser loads the site, the server gives it a random ID and
+        keeps it in a cookie. The ID is not linked to your name or to an account anywhere else.</li>
+      <li><b>Display name.</b> Optional. It is the name shown on your forum posts ("Anonymous learner" if you
+        leave it empty), and you can change it at any time.</li>
       <li><b>Study activity.</b> Lessons you mark as understood, quiz scores, notes you write, the last lesson
         you opened, the days you studied (for your streak) and your progress through video lessons.</li>
-      <li><b>Forum activity.</b> Your questions, answers, upvotes and "helpful" marks. Other signed-in learners
-        can see your posts together with your display name.</li>
+      <li><b>Forum activity.</b> Your questions, answers, upvotes and "helpful" marks. Everyone who visits the
+        site can see your posts together with your display name.</li>
       <li><b>Feedback and email.</b> Anything you send through the Send feedback page. If you email us, we
         receive your email address and your message. They stay in our mailbox, which is provided by Google,
-        and are not added to your account.</li>
+        and are not connected to your visitor ID.</li>
       <li><b>Uploads.</b> If you upload notes (PDF, Word or text), we read the file's text to find matching
         lessons, and we keep the file name and the topics it matched. The file itself is deleted straight away
         unless it is a PDF being turned into an AI video lesson. In that case we keep the file and the lesson
         made from it.</li>
-      <li><b>Technical information.</b> Your IP address is used to limit abuse, such as too many sign-in
-        attempts. Those counters can include the username someone tried to sign in with, and are normally
-        cleared within a few days. Our hosting provider also keeps standard server logs (IP address, browser
-        type and the pages requested).</li>
-      <li><b>Cookies and browser storage.</b> One essential sign-in cookie and a few saved preferences. See the
-        <a href="cookies.html">Cookie Policy</a>.</li>
+      <li><b>Technical information.</b> Your IP address is used to limit abuse, such as too many posts or too
+        many new visitors from one network. Those counters are normally cleared within a few days. Our hosting
+        provider also keeps standard server logs (IP address, browser type and the pages requested).</li>
+      <li><b>Cookies and browser storage.</b> One essential cookie that holds your visitor ID, and a few saved
+        preferences. See the <a href="cookies.html">Cookie Policy</a>.</li>
     </ul>
+    <p>Until October 2026 the site had sign-in. The usernames, email addresses, passwords and Google account
+      IDs from that time have been deleted.</p>
 
     <h2>2. Why we use it</h2>
     <ul>
-      <li>to create your account and keep you signed in;</li>
-      <li>to save your progress, notes and scores and show them back to you;</li>
+      <li>to remember your progress, notes and scores and show them back to you;</li>
       <li>to run the Q&amp;A forum and show posts to other learners;</li>
       <li>to build study plans and video lessons from files you upload;</li>
-      <li>to keep the site safe: bot checks, limits on repeated requests, moderation, and blocking accounts
-        that break the <a href="terms.html">Terms</a>;</li>
+      <li>to keep the site safe: limits on repeated requests, moderation, and blocking browsers that are used
+        to break the <a href="terms.html">Terms</a>;</li>
       <li>to read feedback and improve the site.</li>
     </ul>
     <p>We don't use your information for advertising. The only automated checks are the forum's word filter
       and the abuse limits described above.</p>
-    <p>By creating an account you consent to these uses. You can withdraw that consent by asking us to delete
-      your account (section 6), but the site can't work for you without this information.</p>
+    <p>By using the site you consent to these uses. You can withdraw that consent by deleting your data
+      (section 6), but the site can't save anything for you without this information.</p>
 
     <h2>3. Who we share it with</h2>
     <p>We don't sell or rent personal information. These service providers help run the site, and each handles
       information under its own privacy policy:</p>
     <ul>
       <li><b>PythonAnywhere</b> (hosting). The site and its database run on PythonAnywhere's servers.</li>
-      <li><b>Google.</b> Sign in with Google is loaded on the sign-in screen, and Google Fonts is loaded on
-        every page. Google receives your IP address and browser details, and your Google account details if
-        you choose Google sign-in.</li>
-      <li><b>Cloudflare Turnstile</b> (the bot check on the create-account form). Cloudflare receives your IP
-        address and signals from your browser to decide whether you are a person.</li>
+      <li><b>Google Fonts</b> (the site's typefaces, loaded on every page). Google receives your IP address
+        and browser details when your browser downloads them.</li>
       <li><b>jsDelivr</b> (delivers the math and animation libraries). It receives your IP address when your
         browser downloads them.</li>
       <li><b>Anthropic</b> (AI lessons). When AI lessons are switched on, a PDF you upload is sent to
         Anthropic's Claude service to build the lesson. Please don't upload files that contain personal
         information about you or anyone else.</li>
     </ul>
-    <p>Other learners see your display name and forum posts. We may also disclose information when the law
+    <p>Other visitors see your display name and forum posts. We may also disclose information when the law
       requires it, or when it is needed to protect someone's safety or the security of the site. If someone
       else takes over running CalcLearners, your information would move to them under this policy, and we
-      would say so on the sign-in page first.</p>
+      would say so on the home page first.</p>
 
     <h2>4. Where your information is kept</h2>
     <p>Our service providers store and process information outside Canada, including in the United States.
@@ -116,49 +111,54 @@
 
     <h2>5. How long we keep it</h2>
     <ul>
-      <li><b>Account, progress, notes and uploads:</b> until you delete them or ask us to delete your account.</li>
+      <li><b>Progress, notes and uploads:</b> until you delete them or use "Delete my data".</li>
       <li><b>Forum posts:</b> until you or a moderator delete them.</li>
       <li><b>Feedback and emails:</b> until we have dealt with them, or until you ask us to delete them.</li>
       <li><b>Abuse-limit counters:</b> normally a few days.</li>
-      <li><b>Sign-in cookie:</b> up to 400 days after your last visit, or until you sign out.</li>
-      <li><b>Blocked accounts:</b> if we block an account for breaking the Terms, we keep a minimal record so
+      <li><b>The visitor ID cookie:</b> up to 400 days after your last visit.</li>
+      <li><b>Blocked browsers:</b> if we block a browser for breaking the Terms, we keep a minimal record so
         the block keeps working.</li>
     </ul>
+    <p>If your cookie is cleared or expires, what was saved under that ID stays on our server but is no longer
+      connected to your browser.</p>
 
     <h2>6. Your choices and rights</h2>
-    <p>Inside the site you can change your display name, delete your own forum posts, and use "Reset my
-      progress" on the My progress page to clear your progress, quiz scores and notes.</p>
-    <p>You can also ask us to give you a copy of the information we hold about you, to correct it, or to
-      delete your account and everything attached to it. The simplest way is the
-      <a href="./#/feedback">Send feedback</a> page while you are signed in, because then we know the request
-      comes from the account holder. You can also email <a href="mailto:CalcLearners@gmail.com">CalcLearners@gmail.com</a>. We aim to answer within 30 days.</p>
-    <p>Accounts have no email address attached. If you can no longer sign in (for example, if you lose your
-      password) and you email us about an account, we will ask for details that only the account holder would
-      know, such as the username and what is saved in it. If we can't be reasonably sure the account is yours,
-      we may not be able to act on the request.</p>
+    <p>On the My progress page you can change your display name, use "Reset my progress" to clear your
+      progress, quiz scores and notes, or use "Delete my data" to delete everything saved for your browser.
+      "Delete my data" asks you to type a confirmation, happens straight away and can't be undone: your
+      progress, quiz scores, notes, uploads and the lessons made from them, feedback, votes and forum posts
+      go, along with the answers other learners posted under your questions. A lesson made from a file that
+      another learner also uploaded stays available to them. You can also delete individual forum posts of
+      your own.</p>
+    <p>You can ask us for a copy of the information we hold about you, or to correct it, through the
+      <a href="./#/feedback">Send feedback</a> page or by emailing
+      <a href="mailto:CalcLearners@gmail.com">CalcLearners@gmail.com</a>. We aim to answer within 30 days.</p>
+    <p>Because there are no accounts, the cookie in your browser is the only link between you and your data.
+      If you ask about data from a browser whose cookie is gone, we will ask for details that help us find it,
+      such as your display name and what you posted. If we can't be reasonably sure the data is yours, we may
+      not be able to act on the request.</p>
     <p>If you are not satisfied with how we handle your information, you can contact the Office of the Privacy
       Commissioner of Canada or the privacy regulator in your province or country.</p>
 
     <h2>7. Security</h2>
-    <p>The site is served over HTTPS, passwords are stored only as salted hashes, the sign-in cookie can't be
-      read by page scripts, and repeated sign-in attempts are limited. No website can promise perfect
-      security. If a breach creates a real risk of significant harm, we will post a notice on the site and
-      report it as the law requires.</p>
+    <p>The site is served over HTTPS, the visitor ID cookie is signed and can't be read by page scripts, and
+      repeated requests are limited. No website can promise perfect security. If a breach creates a real risk
+      of significant harm, we will post a notice on the site and report it as the law requires.</p>
 
     <h2>8. Children and teens</h2>
-    <p>CalcLearners is written for high-school and college calculus students. You must be at least 13 to create
-      an account. If you are under the age of majority where you live, get a parent's or guardian's permission
-      first. We don't knowingly collect information from children under 13. If you believe a child under 13 has
-      an account, tell us and we will delete it.</p>
+    <p>CalcLearners is written for high-school and college calculus students. You must be at least 13 to use
+      it. If you are under the age of majority where you live, get a parent's or guardian's permission first.
+      We don't knowingly collect information from children under 13. If you believe a child under 13 has been
+      using the site, tell us and we will delete what we can identify as theirs.</p>
 
     <h2>9. Changes to this policy</h2>
     <p>If we change this policy we will update the date at the top. If a change is significant, we will also
-      say so on the sign-in page before it takes effect.</p>
+      say so on the home page before it takes effect.</p>
 
     <h2>10. Contact</h2>
-    <p>The site's operator is the person responsible for privacy at CalcLearners. Email <a href="mailto:CalcLearners@gmail.com">CalcLearners@gmail.com</a> with questions,
-      requests or complaints. If you have an account, you can also use the "Anything else?" box on the
-      <a href="./#/feedback">Send feedback</a> page.</p>
+    <p>The site's operator is the person responsible for privacy at CalcLearners. Email
+      <a href="mailto:CalcLearners@gmail.com">CalcLearners@gmail.com</a> with questions, requests or
+      complaints, or use the "Anything else?" box on the <a href="./#/feedback">Send feedback</a> page.</p>
   </main>
   <footer class="site-foot">
     <div class="wrap">

@@ -14,9 +14,9 @@ function store(key, value) {
   } catch (e) { return null; }
 }
 
-// You sign in to an account; the server keeps it in a secure cookie. Browsers from
-// before accounts kept an anonymous ID here, sent along until you sign up so your
-// earlier progress moves into the new account.
+// Your learner ID lives in a secure cookie the server sets (no sign-up needed).
+// Browsers from before that change kept their ID here; it's sent once so the server
+// can move it into the cookie, then forgotten.
 let LEGACY_UID = store("uid");
 
 const isJson = res => res.ok && (res.headers.get("content-type") || "").includes("json");
@@ -28,7 +28,7 @@ const isJson = res => res.ok && (res.headers.get("content-type") || "").includes
 async function useLocalServer() {
   if (!/^(localhost|127\.0\.0\.1)$/.test(location.hostname) || location.port === "5000") return;
   try {
-    if (isJson(await fetch("http://localhost:5000/api/auth/config"))) {
+    if (isJson(await fetch("http://localhost:5000/api/lessons"))) {
       location.replace("http://localhost:5000/" + location.hash);
       await new Promise(() => {}); // the browser is navigating away
     }
@@ -51,11 +51,6 @@ async function api(path, { method = "GET", body } = {}) {
   try { res = await fetch("/api" + path, opts); }
   catch (e) { offline(); throw new ApiError("Can't reach the server.", 0); }
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401 && !path.startsWith("/auth/")) {
-    // Signed out (cookie expired, or signed out on another device): back to the sign-in screen.
-    if (!document.body.classList.contains("signed-out")) Auth.show("signin");
-    throw new ApiError("Please sign in.", 401);
-  }
   if (!res.ok) throw new ApiError(data.error || "Something went wrong. Please try again.", res.status);
   return data;
 }
@@ -142,7 +137,7 @@ const FEEDBACK_QUESTIONS = [
   "If you made this website, what changes would you make?",
   "Which topic was hardest to find help for?",
   "What would make the forum more useful?",
-  "Anything else? Privacy requests (like deleting your account) go here too."
+  "Anything else? Privacy questions and requests go here too."
 ];
 
 // ---------- Weeks ----------
@@ -220,7 +215,6 @@ function openSearch() {
 // Press "/" anywhere to jump to topic search.
 document.addEventListener("keydown", e => {
   if (e.key !== "/" || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
-  if (document.body.classList.contains("signed-out")) return;
   e.preventDefault();
   openSearch();
 });
@@ -292,7 +286,6 @@ document.addEventListener("click", e => {
 window.addEventListener("hashchange", route);
 
 async function route() {
-  if (document.body.classList.contains("signed-out")) return;
   const { view, arg, params } = parseHash();
   const home = !view || view === "home";
   window.VideoPlayer?.stopAll();
@@ -670,17 +663,31 @@ async function dashboard() {
       <div class="card"><p class="muted">Your best quiz score on these is under 70%. A quick review will help.</p>
       <div class="chips">${review.map(t => `<a class="chip weak" href="#/learn/${t}">${esc(BY_ID[t].name)} · ${ME.quiz[t].best}%</a>`).join("")}</div></div>` : ""}
 
-    <h3>Account</h3>
+    <h3>Your data</h3>
     <div class="card">
-      <p class="account-line">Signed in ${ME.username ? `as <b>@${esc(ME.username)}</b>` : "with <b>Google</b>"}
-        ${ME.username && ME.google ? `<small>Google sign-in is linked</small>` : ""}</p>
       <label for="name">Display name <small>(shown on your forum posts)</small></label>
       <div class="row"><input id="name" value="${esc(ME.name)}" maxlength="40" placeholder="Anonymous learner">
         <button id="save-name">Save name</button></div>
+      <p><small>There are no accounts. Your progress is saved on the server and linked to this browser by a
+        cookie, so clearing your cookies or switching browsers starts you fresh.</small></p>
       <div class="row account-actions">
-        <button class="ghost sign-out" type="button">Sign out</button>
         <button class="ghost small" id="reset">Reset my progress</button>
+        <button class="ghost small danger" id="delete-data" aria-expanded="false" aria-controls="delete-form">Delete my data</button>
       </div>
+      <form id="delete-form" class="delete-data" hidden novalidate>
+        <p><b>Delete everything saved for this browser?</b> Your progress, quiz scores, notes, uploads and the
+          lessons made from them, feedback, votes and forum posts are removed, along with the answers under
+          your questions. This can't be undone.</p>
+        <div class="field">
+          <label for="delete-confirm">Type DELETE to confirm</label>
+          <input id="delete-confirm" autocomplete="off" autocapitalize="characters" spellcheck="false" required>
+        </div>
+        <p class="form-error" role="alert"></p>
+        <div class="row">
+          <button type="submit" class="danger">Delete my data</button>
+          <button type="button" class="ghost" id="delete-cancel">Keep my data</button>
+        </div>
+      </form>
     </div>`;
 
   $("#save-name").onclick = async () => {
@@ -699,6 +706,34 @@ async function dashboard() {
     updateProgress();
     dashboard();
     toast("Progress reset");
+  };
+
+  // Deleting can't be undone, so the form says what goes and asks for a typed word.
+  const delForm = $("#delete-form"), delError = delForm.querySelector(".form-error");
+  const showDelete = open => {
+    delForm.hidden = !open;
+    delForm.reset();
+    delError.textContent = "";
+    $("#delete-data").setAttribute("aria-expanded", open);
+    (open ? $("#delete-confirm") : $("#delete-data")).focus();
+  };
+  $("#delete-data").onclick = () => showDelete(delForm.hidden);
+  $("#delete-cancel").onclick = () => showDelete(false);
+  delForm.oninput = () => { delError.textContent = ""; };
+  delForm.onsubmit = async e => {
+    e.preventDefault();
+    const btn = delForm.querySelector("button[type=submit]");
+    btn.disabled = true;
+    try {
+      await api("/me/delete", { method: "POST", body: { confirm: $("#delete-confirm").value } });
+    } catch (err) {
+      delError.textContent = err.message;
+      btn.disabled = false;
+      return;
+    }
+    // Nothing of the old data stays on the page: start over as a new visitor.
+    location.hash = "#/";
+    location.reload();
   };
 }
 
@@ -811,9 +846,9 @@ async function forum(_, params) {
         await api("/answers/" + t.dataset.delAnswer, { method: "DELETE" });
         toast("Answer deleted");
       } else if (t.dataset.block) {
-        if (!confirm("Block this person? They'll be signed out, can't sign in again, and everything they posted is deleted.")) return;
+        if (!confirm("Block this person? Their browser is locked out and everything they posted is deleted.")) return;
         await api("/admin/block", { method: "POST", body: { kind: t.dataset.block, id: +t.dataset.id } });
-        toast("Account blocked and posts deleted");
+        toast("Blocked, and their posts deleted");
       } else if (t.dataset.helpful) {
         await api(`/answers/${t.dataset.helpful}/helpful`, { method: "POST" });
       } else if (t.dataset.reply) {
@@ -1409,7 +1444,6 @@ $$(".theme-toggle").forEach(b => b.addEventListener("click", () => {
   document.documentElement.dataset.theme = next;
   store("theme", next);
   syncTheme();
-  Auth.retheme();
 }));
 syncTheme();
 
@@ -1630,224 +1664,20 @@ function startGraph() {
   })(t0);
 }
 
-// ==================================================
-// SIGN IN: username + password, or Google
-// ==================================================
-const Auth = (() => {
-  let config = { google_client_id: "", turnstile_site_key: "" };
-  let view = "signin", captcha = null, googleReady = false;
-  const card = $("#auth-card");
-
-  function loadScript(src) {
-    return new Promise((resolve, reject) => {
-      const old = document.querySelector(`script[src="${src}"]`);
-      if (old) { if (old.dataset.loaded) resolve(); else old.addEventListener("load", resolve); return; }
-      const s = document.createElement("script");
-      s.src = src;
-      s.async = true;
-      s.onload = () => { s.dataset.loaded = "1"; resolve(); };
-      s.onerror = reject;
-      document.head.appendChild(s);
-    });
-  }
-
-  const field = (id, label, attrs, hint = "") => `
-    <div class="field">
-      <label for="${id}">${label}</label>
-      <input id="${id}" ${attrs}${hint ? ` aria-describedby="${id}-hint"` : ""}>
-      ${hint ? `<small class="hint" id="${id}-hint">${hint}</small>` : ""}
-    </div>`;
-  const googleSlot = () => config.google_client_id
-    ? `<div class="google-slot" id="google-slot"></div><div class="or"><span>or</span></div>` : "";
-  const captchaSlot = () => config.turnstile_site_key ? `<div class="captcha-slot" id="captcha-slot"></div>` : "";
-  const errorBox = `<p class="form-error" role="alert"></p>`;
-  const NAME = 'autocapitalize="none" autocorrect="off" spellcheck="false" required';
-  const legal = `<p class="auth-alt"><small>By signing in or creating an account you agree to our
-    <a href="terms.html">Terms</a> and <a href="privacy.html">Privacy Policy</a>.</small></p>`;
-
-  const VIEWS = {
-    signin: () => `
-      <h2>Sign in</h2>
-      ${googleSlot()}
-      <form id="auth-form" novalidate>
-        ${field("a-login", "Username", `name="login" autocomplete="username" ${NAME}`)}
-        ${field("a-pass", "Password", 'name="password" type="password" autocomplete="current-password" required')}
-        ${errorBox}
-        <button type="submit" class="btn-block">Sign in</button>
-      </form>
-      ${legal}
-      <p class="auth-switch">New to CalcLearners? <button type="button" class="link" data-auth="signup">Create an account</button></p>`,
-
-    signup: () => `
-      <h2>Create your account</h2>
-      ${googleSlot()}
-      <form id="auth-form" novalidate>
-        ${field("a-user", "Username", `name="username" autocomplete="username" maxlength="20" ${NAME}`,
-          "2 to 20 letters, numbers or _. You sign in with it.")}
-        ${field("a-pass", "Password", 'name="password" type="password" autocomplete="new-password" required',
-          "At least 8 characters. Keep it safe: we don't ask for an email, so it can't be reset.")}
-        ${captchaSlot()}
-        ${errorBox}
-        <button type="submit" class="btn-block">Create account</button>
-      </form>
-      ${legal}
-      <p class="auth-switch">Already have an account? <button type="button" class="link" data-auth="signin">Sign in</button></p>`
-  };
-
-  // What each form sends to the server.
-  const SUBMIT = {
-    signin: f => ["/auth/login", { login: f.login.value, password: f.password.value }],
-    signup: f => ["/auth/signup", { username: f.username.value, password: f.password.value, turnstile: token() }]
-  };
-
-  // Follow the site's light/dark switch, not the computer's setting.
-  const siteTheme = () => (document.documentElement.dataset.theme === "dark" ? "dark" : "light");
-
-  const token = () => (captcha !== null && window.turnstile ? turnstile.getResponse(captcha) || "" : "");
-  const showError = msg => { const box = card.querySelector(".form-error"); if (box) box.textContent = msg; else toast(msg); };
-
-  function render(next, message = "") {
-    view = next;
-    captcha = null;
-    card.innerHTML = VIEWS[view]();
-    const form = $("#auth-form");
-    if (form) {
-      form.addEventListener("submit", submit);
-      form.addEventListener("input", () => { form.querySelector(".form-error").textContent = ""; });
-    }
-    if (message) showError(message);
-    // Phones: don't throw the keyboard over the page before the person has read it.
-    const first = card.querySelector("input");
-    if (first && !isPhone()) first.focus();
-    if ($("#google-slot")) showGoogle();
-    if ($("#captcha-slot")) showCaptcha();
-  }
-
-  async function submit(e) {
-    e.preventDefault();
-    const form = e.currentTarget, btn = form.querySelector("button[type=submit]");
-    const missing = [...form.querySelectorAll("input[required]")].find(i => !i.value.trim());
-    if (missing) {
-      showError(`Enter your ${missing.labels[0].textContent.toLowerCase()}.`);
-      missing.focus();
-      return;
-    }
-    const [path, data] = SUBMIT[view](form);
-    const label = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = "One moment…";
-    try {
-      await api(path, { method: "POST", body: data });
-      await signedIn();
-    } catch (err) {
-      showError(err.message);
-      if (captcha !== null && window.turnstile) turnstile.reset(captcha);
-      btn.disabled = false;
-      btn.textContent = label;
-    }
-  }
-
-  async function showGoogle() {
-    try {
-      await loadScript("https://accounts.google.com/gsi/client");
-      if (!googleReady) {
-        google.accounts.id.initialize({ client_id: config.google_client_id, callback: onGoogle, ux_mode: "popup" });
-        googleReady = true;
-      }
-      const slot = $("#google-slot");
-      if (!slot) return;
-      google.accounts.id.renderButton(slot, {
-        theme: siteTheme() === "dark" ? "filled_black" : "outline",
-        size: "large", shape: "rectangular", logo_alignment: "center",
-        text: view === "signup" ? "signup_with" : "continue_with",
-        width: Math.min(400, slot.clientWidth || 320)
-      });
-    } catch (e) {
-      $("#google-slot")?.nextElementSibling?.remove();
-      $("#google-slot")?.remove();
-    }
-  }
-
-  async function onGoogle(resp) {
-    try {
-      await api("/auth/google", { method: "POST", body: { credential: resp.credential } });
-      await signedIn();
-    } catch (e) { showError(e.message); }
-  }
-
-  async function showCaptcha() {
-    try {
-      await loadScript("https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit");
-      const slot = $("#captcha-slot");
-      if (slot) captcha = turnstile.render(slot, { sitekey: config.turnstile_site_key, theme: siteTheme(), size: "flexible" });
-    } catch (e) { /* the server explains if the check is missing */ }
-  }
-
-  card.addEventListener("click", e => {
-    const b = e.target.closest("[data-auth]");
-    if (b) render(b.dataset.auth);
-  });
-
-  function show(which = "signin", message = "") {
-    document.body.classList.add("signed-out");
-    window.VideoPlayer?.stopAll();
-    setMenu(false);
-    closeTopics(false);
-    $("#landing").hidden = true;
-    $("#app").hidden = true;
-    $("#auth").hidden = false;
-    window.scrollTo(0, 0);
-    render(which, message);
-  }
-
-  async function loadConfig() {
-    try { config = await api("/auth/config"); } catch (e) { /* the offline banner explains */ }
-  }
-
-  // Redraw Google's button and the bot check in the new colours when the theme changes.
-  function retheme() {
-    if (!document.body.classList.contains("signed-out")) return;
-    if ($("#google-slot") && googleReady) { $("#google-slot").replaceChildren(); showGoogle(); }
-    if ($("#captcha-slot") && captcha !== null && window.turnstile) {
-      turnstile.remove(captcha);
-      captcha = null;
-      showCaptcha();
-    }
-  }
-
-  return { show, loadConfig, retheme };
-})();
-
-// After signing in (or on load with a valid cookie): load your account and the course.
-let graphStarted = false;
-async function signedIn() {
-  ME = await api("/me");
-  // Any progress from before accounts now lives in this account, so the old ID can go.
-  if (LEGACY_UID) { try { localStorage.removeItem("uid"); } catch (e) { /* blocked */ } LEGACY_UID = null; }
-  LESSONS = await api("/lessons");
-  BY_ID = Object.fromEntries(LESSONS.map(l => [l.id, l]));
-  document.body.classList.remove("signed-out");
-  $("#auth").hidden = true;
-  updateProgress();
-  await route();
-  if (!graphStarted) { graphStarted = true; startGraph(); }
-}
-
-document.addEventListener("click", async e => {
-  if (!e.target.closest(".sign-out")) return;
-  try { await api("/auth/logout", { method: "POST" }); } catch (err) { /* signed out locally anyway */ }
-  location.hash = "#/";
-  location.reload();
-});
-
 // ---------- Start ----------
 (async function init() {
   await useLocalServer();
-  await Auth.loadConfig();
   try {
-    await signedIn();
+    ME = await api("/me");
+    // The server now holds our ID in its cookie, so the old copy can go.
+    if (LEGACY_UID) { try { localStorage.removeItem("uid"); } catch (e) { /* blocked */ } LEGACY_UID = null; }
+    LESSONS = await api("/lessons");
+    BY_ID = Object.fromEntries(LESSONS.map(l => [l.id, l]));
   } catch (e) {
-    if (e.status === 0) offline();
-    Auth.show("signin", e.status === 403 ? e.message : "");
+    if (e.status === 403) $("#banner").textContent = e.message;  // this browser was blocked
+    offline();
   }
+  updateProgress();
+  route();
+  startGraph();
 })();
