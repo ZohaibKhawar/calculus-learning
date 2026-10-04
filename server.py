@@ -212,7 +212,7 @@ def init_db():
         # Columns added after the first version.
         have = [r[1] for r in conn.execute("PRAGMA table_info(users)")]
         for column, kind in [("blocked", "INTEGER NOT NULL DEFAULT 0"), ("admin", "INTEGER NOT NULL DEFAULT 0"),
-                             ("last_seen", "TEXT")]:
+                             ("last_seen", "TEXT"), ("source", "TEXT")]:
             if column not in have:
                 conn.execute(f"ALTER TABLE users ADD COLUMN {column} {kind}")  # fixed names from this list
         # Older versions had sign-in (email codes, usernames, passwords, Google). Forget all of
@@ -306,6 +306,28 @@ def current_user():
         if random.random() < 0.05:
             forget_inactive()
     return uid
+
+
+# Links in our ads end in ?utm_source=google. A new visitor who arrives through one has that
+# word saved with their ID, so ad_report.py can count how many of them studied or came back.
+SOURCE_RE = re.compile(r"^[a-z0-9_-]{1,20}$")
+BOT_RE = re.compile(r"bot|crawl|spider|preview", re.I)
+
+
+def note_visit():
+    """On a page (not an API call): count today's visit for a browser we know or one an ad sent."""
+    source = request.args.get("utm_source", "").lower() or ("google" if "gclid" in request.args else "")
+    if not SOURCE_RE.match(source):
+        source = ""
+    known = bool(session.get("uid"))
+    if not (source or known) or BOT_RE.search(request.headers.get("User-Agent", "")):
+        return
+    try:
+        uid = current_user()
+    except HTTPException:  # blocked, or too many new visitors: the page itself should still load
+        return
+    if source and not known:
+        run("UPDATE users SET source = ? WHERE id = ?", (source, uid))
 
 
 def is_admin(uid):
@@ -495,6 +517,7 @@ def check_answer(question, answer):
 def index():
     # The page's own address and the Search Console code depend on where the site runs,
     # so they are added to the <head> here instead of being written into index.html.
+    note_visit()
     head = f'  <link rel="canonical" href="{escape(request.url_root)}">\n'
     if settings.GOOGLE_SITE_VERIFICATION:
         head += f'  <meta name="google-site-verification" content="{escape(settings.GOOGLE_SITE_VERIFICATION)}">\n'
@@ -522,6 +545,7 @@ def lesson_page(lesson_id):
     lesson = LESSON_BY_ID.get(lesson_id)
     if not lesson:
         abort(404)
+    note_visit()
     i = LESSONS.index(lesson)
     title, also_called = SEARCH[lesson_id]
     return render_template(
