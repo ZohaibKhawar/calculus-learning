@@ -2,12 +2,13 @@
 
 With an Anthropic key (see ai.py) Claude answers, knowing the site's lessons and the
 lesson the student has open. Without one, or when the AI can't answer, the reply comes
-from the site itself: small talk, how the site works, and the lessons closest to the
-question.
+from the site itself: small talk, how the site works, general questions about calculus
+and studying, and the lessons closest to the question.
 
 Nothing typed into the chat is saved on the server.
 """
 import re
+import unicodedata
 from itertools import groupby
 
 import ai
@@ -48,7 +49,7 @@ SITE = [
     (r"\b(feedback|bugs?|broken|suggestions?)\b",
      "Tell us on the [feedback page](#/feedback). Bug reports and ideas are both welcome."),
     (r"\b(where (do|should) i (start|begin)|get started|what (should|do) i (learn|study|do) (first|next)|"
-     r"which lesson|course|syllabus|weeks?)\b",
+     r"which lesson|(what|which) order|course|syllabus|weeks?|calc(ulus)? ?(1|2|3|ii|iii|ab|bc))\b",
      f"The [course page](#/learn) lists all {len(LESSONS)} lessons week by week: precalculus review, limits, "
      "derivatives, integrals, differential equations and partial derivatives, plus extra topics. Each lesson "
      "has the big idea, key formulas, a worked example, common mistakes, practice problems and a quiz. The "
@@ -155,21 +156,62 @@ def clean_history(raw):
 
 
 # ---------- Answers without the AI ----------
+ABOUT = ("Calculus is the math of change. It has two big ideas: **derivatives** measure how fast something is "
+         "changing at one instant (the slope of a curve), and **integrals** add up everything that has built up "
+         "(the area under a curve). **Limits** are the tool behind both.\n\n"
+         "Most people find the new ideas easier than they expected. It's usually the algebra that trips them up, "
+         "which is why the course starts with a review week. The [course page](#/learn) shows the whole path.")
+
+PREPARE = ("To get ready for calculus, make the algebra underneath it feel easy, because that's where most "
+           "mistakes come from. Week 1 of the course reviews exactly that:\n"
+           + "\n".join(f"- [{l['name']}](#/learn/{l['id']})" for l in LESSONS if l["week"] == 1)
+           + "\n\nTake each lesson's quiz first and skip the ones you pass. After that you're ready for "
+           "[limits](#/learn/limits), where calculus really starts.")
+
+STUCK = ("Getting stuck is a normal part of learning calculus, not a sign you're bad at math. Tell me the topic, "
+         "like \"chain rule\" or \"limits\", and I'll pull up the lesson for it.\n\n"
+         "If you can't tell where it stopped making sense, go back one lesson on the [course page](#/learn) and "
+         "try its quiz: the gap is usually a step earlier than it feels. You can also ask on the "
+         "[Q&A forum](#/forum).")
+
+_EXAM = r"\b(exams?|tests?|midterms?|finals?|quiz\w*)\b"
+
 _SKIP = set("""how what why when where who the and for are can you use with does this that from into about
-    find get need want know tell show give please help explain mean work have has rule rules""".split())
-_INDEX = [(l, set(re.findall(r"[a-z']+", l["name"].lower())), set(re.findall(r"[a-z']+", l["keywords"].lower())))
+    find get need want know tell show give please help explain work have has rule rules their under between
+    calculus calc math maths cool""".split())
+# Everyday words that are also in lesson names and keywords ("my first test", "what's the next
+# step"). On their own they don't name a topic, so they only count next to a word that does.
+_WEAK = set("""test first second value mean theorem definition method basic point part related order algebra
+    problem number change right left step end top bottom one two down general direct multiple term""".split())
+
+
+def _fold(text):
+    """Lowercase with accents and apostrophes dropped, so every spelling of L'Hopital's matches."""
+    return unicodedata.normalize("NFKD", text.lower()).encode("ascii", "ignore").decode().replace("'", "")
+
+
+_INDEX = [(l, set(re.findall(r"[a-z]+", _fold(l["name"]))), set(re.findall(r"[a-z]+", _fold(l["keywords"]))))
           for l in LESSONS]
 
 
 def find_lessons(low):
     """Up to three lessons whose name or keywords share words with the message: [(score, lesson)]."""
-    words = {w[:-1] if w.endswith("s") and len(w) > 4 else w for w in re.findall(r"[a-z']{3,}", low)} - _SKIP
+    words = {w[:-1] if len(w) > 4 and w.endswith("s") and not w.endswith(("ss", "us")) else w
+             for w in re.findall(r"[a-z]{3,}", low)} - _SKIP
 
     def hit(w, hay):
         return any(h == w or (len(w) >= 4 and h.startswith(w)) for h in hay)
 
-    scored = [(sum(3 if hit(w, name) else 1 if hit(w, keys) else 0 for w in words), l) for l, name, keys in _INDEX]
-    return sorted((s for s in scored if s[0]), key=lambda s: -s[0])[:3]  # course order among equals
+    def points(some, name, keys):
+        return sum(3 if hit(w, name) else 1 if hit(w, keys) else 0 for w in some)
+
+    scored = []
+    for l, name, keys in _INDEX:
+        score = points(words - _WEAK, name, keys)
+        # Everyday words alone count only when they spell out a whole name: "mean value theorem".
+        if score or all(any(hit(w, [n]) for w in words) for n in name if len(n) > 2):
+            scored.append((score + points(words & _WEAK, name, keys), l))
+    return sorted(scored, key=lambda s: -s[0])[:3]  # course order among equals
 
 
 def _lesson_answer(hits):
@@ -181,36 +223,54 @@ def _lesson_answer(hits):
 
 
 def basic_reply(text, lesson=None):
-    """An answer from the site itself: small talk, how the site works, or the closest lessons."""
-    low = re.sub(r"[^a-z0-9']+", " ", text.lower()).strip()
+    """An answer from the site itself: small talk, how the site works, calculus and studying
+    in general, or the closest lessons."""
+    low = re.sub(r"[^a-z0-9]+", " ", _fold(text)).strip()
     short = len(low.split()) <= 5
-    hello = re.match(r"(hi+|hey+|hello+|yo|sup|hiya|howdy|good (morning|afternoon|evening|day))\b", low)
-    if hello and short:
-        return (f"Good {hello.group(2)}! " if hello.group(2) else "Hi! ") + HELLO
     if re.match(r"(thanks|thank you|thx|ty|tysm|cheers)\b", low):
         return "You're welcome! Ask me anything else whenever you like."
     if re.match(r"(bye|goodbye|see you|see ya|good night|gn)\b", low):
         return "Good luck with your studying. See you next time!"
-    if short and re.match(r"(ok|okay|k|kk|mhm+|hm+|got it|i see|cool|nice|great|alright|sure|yes|yeah|yep|yup|no|"
-                          r"nope|lol|haha+|makes sense|oh+|ah+|good|perfect|awesome|right|true)\b", low):
-        return "Got it. What would you like to look at next?"
     hits = find_lessons(low)
     if hits and hits[0][0] >= 3:  # the message names a lesson
         return _lesson_answer(hits)
     if re.search(r"\b(who are you|what are you|what can you do|what do you do|your name)\b", low):
         return HELLO
+    # Calculus as a whole, which no single lesson answers.
+    calc = re.search(r"\bcalc(ulus)?\b", low)
+    if re.search(r"\b(prereq\w*|pre ?calc\w*|algebra)\b", low) or (calc and not re.search(_EXAM, low) and re.search(
+            r"\b(prepar\w+|ready|before|start\w*|begin\w*|new to|never|need to know|taking|"
+            r"(going|about|want|plan\w*|how) to (take|learn))\b", low)):
+        return PREPARE
     for pattern, answer in SITE:
         if re.search(pattern, low):
             return answer
-    if re.search(r"\b(study|studying|prepare|preparing|prep|exams?|tests?|midterms?|finals?|revise|tips|"
-                 r"motivat\w*|procrastinat\w*)\b", low):
+    if calc and re.search(r"\b(whats?( even)?( is| are)? calc\w*|(explain|define|about) calc\w*|why|(point|use) of|"
+                          r"(used|good|useful) for|hard\w*|difficult|easy|scary|tough|important|useful|worth|necessary)\b", low):
+        return ABOUT
+    if re.search(_EXAM, low) or re.search(r"\b(study|studying|prepare|preparing|prep|revis\w*|tips|advice|pass|"
+                                          r"passing|get(ting)? better|improve|cram\w*|motivat\w*|procrastinat\w*)\b",
+                                          low):
         return STUDY_TIPS
     if hits:
         return _lesson_answer(hits)
+    # Small talk comes last, so "hey, what's a derivative?" gets its answer and not a greeting.
+    stuck = re.search(r"\b(stuck|confus\w*|lost|struggl\w*|dont (understand|get)|do not (understand|get)|cant|"
+                      r"cannot|bad at|hate|giv(e|ing) up|hard|difficult|fail\w*|overwhelm\w*|help me|need help|"
+                      r"can you help)\b|^help\b", low)
+    hello = re.match(r"(hi+|hey+|hello+|yo|sup|hiya|howdy|good (morning|afternoon|evening|day))\b", low)
+    if hello and short and not stuck:
+        return (f"Good {hello.group(2)}! " if hello.group(2) else "Hi! ") + HELLO
+    if short and not stuck and re.match(r"(ok|okay|k|kk|mhm+|hm+|got it|i see|cool|nice|great|alright|sure|yes|"
+                                        r"yeah|yep|yup|no|nope|lol|haha+|makes sense|oh+|ah+|good|perfect|awesome|"
+                                        r"right|true)\b", low):
+        return "Got it. What would you like to look at next?"
     if lesson:
         return (f"Here's the big idea of **{lesson['name']}**: {_plain(lesson['idea'])}\n\n"
                 "The worked example on the lesson page goes through it step by step. If it still doesn't "
                 f"click, ask on the [Q&A forum](#/forum?topic={lesson['id']}).")
+    if stuck:
+        return STUCK
     return ("I can only look things up in the lessons right now. Try naming the topic, for example "
             "\"related rates\" or \"u-substitution\", or post your question on the [Q&A forum](#/forum).")
 
