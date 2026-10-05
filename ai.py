@@ -31,7 +31,11 @@ def client():
     global _client
     if _client is None:
         import anthropic
-        _client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        # Ask for gzip only. Left alone, the HTTP library also offers Brotli whenever a
+        # `brotli` package is installed, and then can't read the answer if that package is
+        # an old one (as on PythonAnywhere): every request fails with a connection error.
+        _client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY,
+                                      default_headers={"Accept-Encoding": "gzip"})
     return _client
 
 
