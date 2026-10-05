@@ -54,6 +54,13 @@
   // Only CalcBot's AI can look at a picture, and the server says whether that is on.
   const canSee = () => !!ME.chat_pictures;
 
+  // Whether it can comes with the visitor's details, which may still be on their way when
+  // the chat is opened: keep checking until they arrive.
+  function syncAttach() {
+    attach.hidden = !canSee();
+    if (!("chat_pictures" in ME) && !panel.hidden) setTimeout(syncAttach, 400);
+  }
+
   function welcome() {
     add("assistant", render("Hi! I'm **CalcBot**. Ask me a math question, how to study for a test, or how this site works."
       + (canSee() ? " You can also send a picture of a problem, your notes or this site." : "")));
@@ -162,7 +169,7 @@
     panel.hidden = false;
     fab.setAttribute("aria-expanded", "true");
     document.body.classList.add("chat-open");
-    attach.hidden = !canSee();
+    syncAttach();
     if (!log.children.length) {
       if (turns.length) turns.forEach(t => show(t)); else welcome();
     }
