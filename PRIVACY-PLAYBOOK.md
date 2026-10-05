@@ -10,8 +10,8 @@ are kept in practice. Not legal advice; written against PIPEDA's fair informatio
 | Visitor ID, display name, progress, quiz scores, notes, streak days | `calclearners.db` on the host | Deleted by the visitor, or 12 months after the browser's or account's last visit (`forget_inactive` in `server.py`) |
 | Account username, password hash and recovery-code hash, for visitors who chose to make an account | `accounts` table in `calclearners.db` | Deleted with the account by its owner ("Delete my account"), or 12 months after the account was last used |
 | Forum posts, likes and dislikes, reports | `calclearners.db` | Deleted by the author or a moderator; unlinked from the visitor after 12 months |
-| CalcBot chat messages | Not stored on the host. The visitor's browser tab keeps them (session storage) | Until the tab is closed |
-| Pictures sent to CalcBot | Not stored anywhere. The page shrinks each one and re-saves it as a JPEG before sending, which drops photo details such as location (`chat.js`) | Until the page is left or reloaded |
+| CalcBot chat messages | Not stored anywhere. They exist only on the open page (`chat.js`) | Until the chat is closed: opening it again starts a new conversation |
+| Pictures sent to CalcBot | Not stored anywhere. The page shrinks each one and re-saves it as a JPEG before sending, which drops photo details such as location (`chat.js`) | Until the chat is closed |
 | Uploaded PDFs kept for AI lessons, and the lessons | `uploads/` and `calclearners.db` | Same as the visitor who uploaded them |
 | Abuse-limit counters (include IP addresses and, for sign-in and password-reset tries, the username tried) | `calclearners.db` | A few days |
 | Feedback | `calclearners.db` | Same as the visitor who sent it |

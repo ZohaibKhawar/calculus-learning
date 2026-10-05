@@ -807,8 +807,6 @@ function restart(hash, message) {
 async function signOut(everywhere) {
   try { await api("/auth/logout", { method: "POST", body: { everywhere } }); }
   catch (e) { toast(e.message); return; }
-  // CalcBot's conversation belongs to whoever was signed in.
-  try { sessionStorage.removeItem("chat"); } catch (e) { /* private window */ }
   restart("#/account", everywhere ? "Signed out of every browser" : "Signed out");
 }
 document.addEventListener("click", e => {

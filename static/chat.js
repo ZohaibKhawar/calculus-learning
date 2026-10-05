@@ -1,7 +1,8 @@
 /* CalcBot: the study helper chat on every page. It opens as a panel down the side of the
  * screen, or as a small window in the corner for anyone who prefers that.
  *
- * The conversation lives in this tab only (session storage); the server keeps none of it.
+ * A conversation lasts until the chat is closed: opening it again starts a new one. Nothing
+ * is kept of it, in the browser or on the server.
  * A message can carry one picture, when CalcBot's AI is on. A picture is shrunk here before
  * it is sent, is never stored, and stays in the chat only if CalcBot finds it is about math,
  * studying or this site.
@@ -14,19 +15,16 @@
   const input = $("#chat-input"), fab = $("#chat-open");
   const file = $("#chat-file"), attach = $("#chat-attach"), tray = $("#chat-pic");
   const sizeBtn = $("#chat-size");
-  const KEEP = 40;   // messages remembered in this tab
-  const SEND = 16;   // how many of them go along with a new message, for context
+  const SEND = 16;   // how many messages go along with a new one, for context
   const SIDE = 1568; // the longest side of a picture once shrunk, in pixels
   const phone = matchMedia("(max-width: 640px)");
   let turns = [];    // [{ role: "user" | "assistant", content, pic: true if a picture went with it }]
   let picture = "";  // the picture waiting to be sent, as a data: URL
   let busy = false;
+  let chat = 0;      // which conversation this is: a reply to one that has been closed is dropped
 
-  try { turns = JSON.parse(sessionStorage.getItem("chat")) || []; } catch (e) { /* blocked or empty */ }
-  if (!Array.isArray(turns)) turns = [];
-  const save = () => {
-    try { sessionStorage.setItem("chat", JSON.stringify(turns.slice(-KEEP))); } catch (e) { /* private window */ }
-  };
+  // Earlier versions kept the conversation in session storage: clear what a tab still has.
+  try { sessionStorage.removeItem("chat"); } catch (e) { /* private window */ }
 
   // The side panel, unless the small window was picked last time.
   function setSize(big) {
@@ -49,15 +47,14 @@
     log.scrollTop = log.scrollHeight;
     return el;
   }
-  // A picture is shown only while this page still has it: a chat restored later notes where it was.
-  function show(t, pic) {
-    if (t.role !== "user") return add(t.role, render(t.content));
-    const el = add("user", (t.pic ? `<span class="chat-pic-tag">Picture</span>` : "") + esc(t.content));
+  // The student's message, under the picture sent with it.
+  function show(text, pic) {
+    const el = add("user", esc(text));
     if (pic) {
       const img = new Image();
       img.alt = "The picture you sent";
       img.src = pic;
-      el.firstChild.replaceWith(img);
+      el.prepend(img);
     }
     return el;
   }
@@ -80,6 +77,16 @@
       "How do I prepare for a calculus test?", "How does this site work?"];
     chips.innerHTML = ideas.map(q => `<button type="button">${esc(q)}</button>`).join("");
     chips.hidden = false;
+  }
+
+  // A new conversation: every time the chat is opened, and from its "Start a new chat" button.
+  function start() {
+    chat++;
+    turns = [];
+    busy = false;
+    setPicture("");
+    log.innerHTML = "";
+    welcome();
   }
 
   // The box grows with the message, up to a few lines.
@@ -140,10 +147,11 @@
     if ((!text && !pic) || busy) return;
     busy = true;
     chips.hidden = true;
+    const id = chat;
     const turn = { role: "user", content: text || "Can you help me with this?" };
     if (pic) turn.pic = true;
     turns.push(turn);
-    const mine = show(turn, pic);
+    const mine = show(turn.content, pic);
     setPicture("");
     input.value = "";
     grow();
@@ -154,16 +162,17 @@
     try {
       const r = await api("/chat", { method: "POST", body: {
         messages, image: pic || undefined, lesson: currentTopicId() || "", page: parseHash().view || "home" } });
+      if (id !== chat) return;  // the chat was closed or started over while CalcBot was thinking
       turns.push({ role: "assistant", content: r.reply });
       reply.innerHTML = render(r.reply);
       if (pic && !r.picture) dropPicture(turn, mine);
     } catch (e) {
+      if (id !== chat) return;
       // The message stays in the chat, so the next one sent carries it along.
       reply.classList.add("err");
       reply.textContent = e.message;
       if (pic) dropPicture(turn, mine);
     }
-    save();
     busy = false;
     log.scrollTop = reply.offsetTop - 12;  // show the start of the answer, not its end
   }
@@ -181,9 +190,7 @@
     fab.setAttribute("aria-expanded", "true");
     document.body.classList.add("chat-open");
     syncAttach();
-    if (!log.children.length) {
-      if (turns.length) turns.forEach(t => show(t)); else welcome();
-    }
+    start();
     fit();
     log.scrollTop = log.scrollHeight;
     input.focus();
@@ -204,15 +211,7 @@
     store("chat-size", big ? "big" : "small");
     log.scrollTop = log.scrollHeight;
   });
-  $("#chat-new").addEventListener("click", () => {
-    if (busy) return;
-    turns = [];
-    save();
-    setPicture("");
-    log.innerHTML = "";
-    welcome();
-    input.focus();
-  });
+  $("#chat-new").addEventListener("click", () => { start(); input.focus(); });
   attach.addEventListener("click", () => file.click());
   file.addEventListener("change", () => { attachPicture(file.files[0]); file.value = ""; });
   $("#chat-pic-remove").addEventListener("click", () => { setPicture(""); input.focus(); });
