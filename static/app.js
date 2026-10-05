@@ -14,7 +14,8 @@ function store(key, value) {
   } catch (e) { return null; }
 }
 
-// Your learner ID lives in a secure cookie the server sets (no sign-up needed).
+// Your learner ID lives in a secure cookie the server sets. No sign-up is needed; an account
+// (see "Account" below) is optional.
 // Browsers from before that change kept their ID here; it's sent once so the server
 // can move it into the cookie, then forgotten.
 let LEGACY_UID = store("uid");
@@ -94,7 +95,7 @@ const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = se
 // ---------- State ----------
 let LESSONS = [];
 let BY_ID = {};
-let ME = { name: "", done: [], quiz: {}, notes: [], last_topic: null, streak: 0 };
+let ME = { name: "", username: null, saved: false, done: [], quiz: {}, notes: [], last_topic: null, streak: 0 };
 const isDone = id => ME.done.includes(id);
 
 async function refreshMe() { ME = await api("/me"); }
@@ -288,6 +289,7 @@ window.addEventListener("hashchange", route);
 async function route() {
   const { view, arg, params } = parseHash();
   const home = !view || view === "home";
+  if (view !== "account") guestReturn = location.hash || "#/";
   window.VideoPlayer?.stopAll();
   clearTimeout(pollTimer);
   $("#landing").hidden = !home;
@@ -305,7 +307,7 @@ async function route() {
     return;
   }
   renderSidebar();
-  const views = { learn, dashboard, formulas, forum, upload, feedback, videos: videosView, watch, admin };
+  const views = { learn, dashboard, formulas, forum, upload, feedback, videos: videosView, watch, admin, account };
   await (views[view] || learn)(arg, params);
   math(V);
   // A quick fade shows the page changed (skipped when motion is turned off).
@@ -665,40 +667,31 @@ async function dashboard() {
 
     <h3>Your data</h3>
     <div class="card">
-      <label for="name">Display name <small>(shown on your forum posts)</small></label>
-      <div class="row"><input id="name" value="${esc(ME.name)}" maxlength="40" placeholder="Anonymous learner">
-        <button id="save-name">Save name</button></div>
-      <p><small>There are no accounts. Your progress is saved on the server and linked to this browser by a
-        cookie, so clearing your cookies or switching browsers starts you fresh. What is saved for a browser
-        that hasn't visited for 12 months is deleted.</small></p>
+      ${nameRow()}
+      ${ME.username ? `
+      <p><b>Signed in as ${esc(ME.username)}.</b> Your progress is saved to your account, so it's there on any
+        phone or computer where you sign in.</p>
+      <div class="row">
+        <a class="btn ghost small" href="#/account">Open my profile</a>
+        <button class="ghost small" data-sign-out>Sign out</button>
+      </div>
+      <p><small>An account that isn't used for 12 months is deleted, along with what is saved in it.</small></p>` : `
+      <p><b>You're using CalcLearners as a guest.</b> Your progress is saved on the server and linked to this browser by a
+        cookie, so clearing your cookies or switching browsers starts you fresh. An account lets you open it
+        on another phone or computer.</p>
+      <div class="row">
+        <a class="btn small" href="#/account?new=1">Create an account</a>
+        <a class="btn ghost small" href="#/account">Sign in</a>
+      </div>
+      <p><small>What is saved for a browser that hasn't visited for 12 months is deleted.</small></p>`}
       <div class="row account-actions">
         <button class="ghost small" id="reset">Reset my progress</button>
-        <button class="ghost small danger" id="delete-data" aria-expanded="false" aria-controls="delete-form">Delete my data</button>
+        ${ME.username ? "" : deleteControls().button}
       </div>
-      <form id="delete-form" class="delete-data" hidden novalidate>
-        <p><b>Delete everything saved for this browser?</b> Your progress, quiz scores, notes, uploads and the
-          lessons made from them, feedback, votes and forum posts are removed, along with the answers under
-          your questions. This can't be undone.</p>
-        <div class="field">
-          <label for="delete-confirm">Type DELETE to confirm</label>
-          <input id="delete-confirm" autocomplete="off" autocapitalize="characters" spellcheck="false" required>
-        </div>
-        <p class="form-error" role="alert"></p>
-        <div class="row">
-          <button type="submit" class="danger">Delete my data</button>
-          <button type="button" class="ghost" id="delete-cancel">Keep my data</button>
-        </div>
-      </form>
+      ${ME.username ? "" : deleteControls().form}
     </div>`;
 
-  $("#save-name").onclick = async () => {
-    try {
-      const r = await api("/me", { method: "POST", body: { name: $("#name").value } });
-      ME.name = r.name;
-      toast("Name saved");
-      dashboard().then(() => math(V));
-    } catch (e) { toast(e.message); }
-  };
+  wireName(() => dashboard().then(() => math(V)));
   $("#reset").onclick = async () => {
     if (!confirm("Reset all your progress, quiz scores and notes? This can't be undone.")) return;
     await api("/reset", { method: "POST" });
@@ -708,27 +701,74 @@ async function dashboard() {
     dashboard();
     toast("Progress reset");
   };
+  if (!ME.username) wireDelete();
+}
 
-  // Deleting can't be undone, so the form says what goes and asks for a typed word.
-  const delForm = $("#delete-form"), delError = delForm.querySelector(".form-error");
-  const showDelete = open => {
-    delForm.hidden = !open;
-    delForm.reset();
-    delError.textContent = "";
+// The display name box, on My progress and on the profile page.
+function nameRow() {
+  return `<label for="name">Display name <small>(shown on your forum posts)</small></label>
+      <div class="row"><input id="name" value="${esc(ME.name)}" maxlength="40" placeholder="Anonymous learner">
+        <button id="save-name">Save name</button></div>`;
+}
+
+function wireName(redraw) {
+  $("#save-name").onclick = async () => {
+    try {
+      const r = await api("/me", { method: "POST", body: { name: $("#name").value } });
+      ME.name = r.name;
+      toast("Name saved");
+      redraw();
+    } catch (e) { toast(e.message); }
+  };
+}
+
+// Deleting can't be undone, so the form says what goes and asks for the account's password, or
+// for a typed word when there is no account. A browser on its own gets these on My progress;
+// an account gets them on its profile page.
+function deleteControls() {
+  const acct = !!ME.username;
+  return {
+    button: `<button class="ghost small danger" id="delete-data" aria-expanded="false" aria-controls="delete-form">${acct ? "Delete my account" : "Delete my data"}</button>`,
+    form: `<form id="delete-form" class="delete-data" hidden novalidate>
+        <p><b>${acct ? "Delete your account and everything saved in it?" : "Delete everything saved for this browser?"}</b>
+          Your progress, quiz scores, notes, uploads and the lessons made from them, feedback, votes and forum
+          posts are removed, along with the answers under your questions. This can't be undone.</p>
+        <div class="field">
+          ${acct ? `<label for="delete-confirm">Enter your password to prove it's you</label>
+          <input id="delete-confirm" type="password" autocomplete="current-password" required>`
+          : `<label for="delete-confirm">Type DELETE to confirm</label>
+          <input id="delete-confirm" autocomplete="off" autocapitalize="characters" spellcheck="false" required>`}
+        </div>
+        <p class="form-error" role="alert"></p>
+        <div class="row">
+          <button type="submit" class="danger">${acct ? "Delete my account" : "Delete my data"}</button>
+          <button type="button" class="ghost" id="delete-cancel">${acct ? "Keep my account" : "Keep my data"}</button>
+        </div>
+      </form>`
+  };
+}
+
+function wireDelete() {
+  const form = $("#delete-form"), error = form.querySelector(".form-error");
+  const show = open => {
+    form.hidden = !open;
+    form.reset();
+    error.textContent = "";
     $("#delete-data").setAttribute("aria-expanded", open);
     (open ? $("#delete-confirm") : $("#delete-data")).focus();
   };
-  $("#delete-data").onclick = () => showDelete(delForm.hidden);
-  $("#delete-cancel").onclick = () => showDelete(false);
-  delForm.oninput = () => { delError.textContent = ""; };
-  delForm.onsubmit = async e => {
+  $("#delete-data").onclick = () => show(form.hidden);
+  $("#delete-cancel").onclick = () => show(false);
+  form.oninput = () => { error.textContent = ""; };
+  form.onsubmit = async e => {
     e.preventDefault();
-    const btn = delForm.querySelector("button[type=submit]");
+    const btn = form.querySelector("button[type=submit]");
     btn.disabled = true;
     try {
-      await api("/me/delete", { method: "POST", body: { confirm: $("#delete-confirm").value } });
+      const typed = $("#delete-confirm").value;
+      await api("/me/delete", { method: "POST", body: ME.username ? { password: typed } : { confirm: typed } });
     } catch (err) {
-      delError.textContent = err.message;
+      error.textContent = err.message;
       btn.disabled = false;
       return;
     }
@@ -736,6 +776,363 @@ async function dashboard() {
     location.hash = "#/";
     location.reload();
   };
+}
+
+// ---------- Account (#/account): optional sign-in, and the profile page once signed in ----------
+const USERNAME_OK = /^[a-z0-9_]{3,20}$/i;
+// Where "Continue as guest" goes: the page you were on before the sign-in page, or the course
+// if you came straight to it.
+let guestReturn = "#/learn";
+// Under the sign-in and sign-up buttons. Nobody needs an account, so there is always a way on.
+const guestOption = () => `<div class="guest-option">
+    <span class="or">or</span>
+    <a class="btn ghost" href="${esc(guestReturn)}">Continue as guest</a>
+    <small>No account needed. Your progress saves in this browser.</small>
+  </div>`;
+const PLAIN_TEXT = 'autocapitalize="none" autocorrect="off" spellcheck="false"';
+
+// The account links in the header and the phone menu: "Sign in", or "Profile" once you have.
+function updateAccountLinks() {
+  $$(".account-entry").forEach(a => { a.textContent = ME.username ? "Profile" : "Sign in"; });
+}
+
+// Signing in or out changes whose progress every part of the page shows, so the page starts
+// over. The message is shown once it has.
+function restart(hash, message) {
+  try { sessionStorage.setItem("flash", message); } catch (e) { /* private window */ }
+  location.hash = hash;
+  location.reload();
+}
+
+async function signOut(everywhere) {
+  try { await api("/auth/logout", { method: "POST", body: { everywhere } }); }
+  catch (e) { toast(e.message); return; }
+  // CalcBot's conversation belongs to whoever was signed in.
+  try { sessionStorage.removeItem("chat"); } catch (e) { /* private window */ }
+  restart("#/account", everywhere ? "Signed out of every browser" : "Signed out");
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-sign-out]");
+  if (b) signOut(b.dataset.signOut === "all");
+});
+
+// A form field: a visible label, the input, and one line under it that shows the hint or,
+// after a mistake, what to fix.
+function field(id, label, attrs, hint = "") {
+  return `<div class="field">
+    <label for="${id}">${label}</label>
+    <input id="${id}" ${attrs} aria-describedby="${id}-msg">
+    <small class="hint" id="${id}-msg" aria-live="polite" data-hint="${esc(hint)}">${esc(hint)}</small>
+  </div>`;
+}
+const SHOW_PASSWORD = `<label class="check"><input type="checkbox" data-show-passwords> Show password</label>`;
+
+// A field is checked when you leave it or send the form, never while you type, and one that
+// shows a problem goes back to its hint at the next keystroke. The button always works: with
+// something missing it takes you to the first field to fix.
+function wireForm(form, rules, send) {
+  const inputs = [...form.querySelectorAll("input[name]")];
+  const error = form.querySelector(".form-error");
+  const btn = form.querySelector("button[type=submit]");
+  const problem = input => (rules[input.name] ? rules[input.name](input.value) : "");
+  const mark = (input, text) => {
+    const msg = document.getElementById(input.id + "-msg");
+    input.closest(".field").classList.toggle("invalid", !!text);
+    if (text) input.setAttribute("aria-invalid", "true"); else input.removeAttribute("aria-invalid");
+    msg.textContent = text || msg.dataset.hint;
+  };
+  for (const input of inputs) {
+    input.addEventListener("blur", () => mark(input, problem(input)));
+    input.addEventListener("input", () => { mark(input, ""); error.textContent = ""; });
+  }
+  form.addEventListener("change", e => {
+    if (!e.target.matches("[data-show-passwords]")) return;
+    form.querySelectorAll("[data-pw]").forEach(i => { i.type = e.target.checked ? "text" : "password"; });
+  });
+  form.addEventListener("submit", async e => {
+    e.preventDefault();
+    if (btn.getAttribute("aria-busy")) return;  // already sending
+    error.textContent = "";
+    for (const input of inputs) mark(input, problem(input));
+    const first = inputs.find(i => i.getAttribute("aria-invalid"));
+    if (first) { first.focus(); return; }
+    const label = btn.textContent;
+    btn.setAttribute("aria-busy", "true");
+    btn.textContent = "One moment…";
+    try {
+      await send(Object.fromEntries(inputs.map(i => [i.name, i.value])));
+    } catch (err) {
+      // A taken username is that field's problem; anything else goes above the button.
+      const name = err.status === 409 && form.elements.username;
+      if (name) { mark(name, err.message); name.focus(); } else error.textContent = err.message;
+    }
+    btn.removeAttribute("aria-busy");
+    btn.textContent = label;
+  });
+  // Phones: don't throw the keyboard over the page before the person has read it.
+  if (!isPhone() && form.dataset.focus !== undefined) inputs[0].focus();
+}
+
+// Everything already on the page that depends on who is signed in.
+async function refreshAll() {
+  try { await refreshMe(); } catch (e) { /* show what we have */ }
+  renderSidebar();
+  updateProgress();
+  updateAccountLinks();
+}
+
+async function account(_, params) {
+  try { await refreshMe(); } catch (e) { /* show what we have */ }
+  updateAccountLinks();
+  if (ME.username) return profile();
+  if (params.get("new") === "1") return signUpView();
+  if (params.get("reset") === "1") return resetView();
+  signInView();
+}
+
+const USERNAME_RULE = v => !v.trim() ? "Choose a username." : USERNAME_OK.test(v.trim()) ? ""
+  : "Use 3 to 20 letters, numbers or _ (no spaces).";
+const NEW_PASSWORD_RULE = v => !v ? "Choose a password." : v.length < 8 ? "Use at least 8 characters." : "";
+
+function signUpView() {
+  V.innerHTML = `
+    <h2>Create an account</h2>
+    <p>An account is optional. It puts what this browser has saved (your progress, quiz scores, notes and
+      forum posts) under a username and password, so you can open it on another phone or computer.</p>
+    <form class="card account-form" id="account-form" novalidate data-focus>
+      ${field("a-user", "Username", `name="username" autocomplete="username" maxlength="20" ${PLAIN_TEXT} required`,
+        "3 to 20 letters, numbers or _. It isn't shown to anyone on the site, and it's safer not to use your real name.")}
+      ${field("a-pass", "Password", 'name="password" type="password" autocomplete="new-password" maxlength="200" data-pw required',
+        "At least 8 characters.")}
+      ${SHOW_PASSWORD}
+      <p class="form-error" role="alert"></p>
+      <button type="submit">Create account</button>
+      ${guestOption()}
+    </form>
+    <p class="account-switch">Already have an account? <a href="#/account">Sign in</a></p>
+    <p><small>We store your username and a scrambled copy of your password, never the password itself. Next
+      you'll get a recovery code to save, in case you forget the password. An account that isn't used for
+      12 months is deleted. <a href="privacy.html">Privacy Policy</a></small></p>`;
+  wireForm($("#account-form"), { username: USERNAME_RULE, password: NEW_PASSWORD_RULE }, async data => {
+    const r = await api("/auth/signup", { method: "POST", body: data });
+    await refreshAll();
+    recoveryView(r.recovery, `Your account <b>${esc(r.username)}</b> is ready, and you're signed in.`,
+      () => restart("#/dashboard", `You're signed in as ${r.username}.`));
+  });
+}
+
+function signInView() {
+  V.innerHTML = `
+    <h2>Sign in</h2>
+    <p>Pick up your progress, quiz scores and notes on this browser.</p>
+    <form class="card account-form" id="account-form" novalidate data-focus>
+      ${field("a-user", "Username", `name="username" autocomplete="username" maxlength="20" ${PLAIN_TEXT} required`)}
+      ${field("a-pass", "Password", 'name="password" type="password" autocomplete="current-password" maxlength="200" data-pw required')}
+      ${SHOW_PASSWORD}
+      ${ME.saved ? `<label class="check"><input type="checkbox" id="a-merge" checked> Add what this browser has saved to my account</label>
+      <small class="hint">Its progress, quiz scores, notes and posts move into your account. On a shared
+        computer, untick this: they then stay here for whoever uses it after you sign out.</small>` : ""}
+      <p class="form-error" role="alert"></p>
+      <button type="submit">Sign in</button>
+      ${guestOption()}
+    </form>
+    <p class="account-switch"><a href="#/account?reset=1">Forgot your password?</a></p>
+    <p class="account-switch">New here? <a href="#/account?new=1">Create an account</a></p>`;
+  wireForm($("#account-form"), {
+    username: v => v.trim() ? "" : "Enter your username.",
+    password: v => v ? "" : "Enter your password."
+  }, async data => {
+    const r = await api("/auth/login", { method: "POST", body: { ...data, merge: !!$("#a-merge")?.checked } });
+    restart("#/dashboard", r.merged ? `Signed in as ${r.username}. What this browser had saved is now in your account.`
+      : `Signed in as ${r.username}`);
+  });
+}
+
+// For someone who forgot their password. The recovery code stands in for it, once.
+function resetView() {
+  V.innerHTML = `
+    <h2>Reset your password</h2>
+    <p>Enter your username and the recovery code you saved when you created your account, then choose a new
+      password.</p>
+    <form class="card account-form" id="account-form" novalidate data-focus>
+      ${field("a-user", "Username", `name="username" autocomplete="username" maxlength="20" ${PLAIN_TEXT} required`)}
+      ${field("a-code", "Recovery code", 'name="code" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="40" required',
+        "20 letters and numbers, like ABCDE-FGHJK-MNPQR-STUVW.")}
+      ${field("a-pass", "New password", 'name="password" type="password" autocomplete="new-password" maxlength="200" data-pw required',
+        "At least 8 characters.")}
+      ${SHOW_PASSWORD}
+      <p class="form-error" role="alert"></p>
+      <button type="submit">Reset password</button>
+    </form>
+    <p class="account-switch"><a href="#/account">Back to sign in</a></p>
+    <p><small>No recovery code? Without it we have no way to check that the account is yours, so its password
+      can't be reset. You can <a href="#/account?new=1">create a new account</a>.</small></p>`;
+  wireForm($("#account-form"), {
+    username: v => v.trim() ? "" : "Enter your username.",
+    code: v => {
+      const n = v.replace(/[^a-z0-9]/gi, "").length;
+      return !n ? "Enter your recovery code." : n !== 20 ? "Enter all 20 letters and numbers of the code." : "";
+    },
+    password: NEW_PASSWORD_RULE
+  }, async data => {
+    const r = await api("/auth/reset", { method: "POST", body: data });
+    await refreshAll();
+    recoveryView(r.recovery, `Your password is changed, and you're signed in as <b>${esc(r.username)}</b>.
+      Your old recovery code no longer works, so here is a new one.`,
+      () => restart("#/dashboard", `Password reset. You're signed in as ${r.username}.`));
+  });
+}
+
+// A recovery code is shown once, here, and is never stored in the browser. `done` runs after
+// the person says they have saved it.
+function recoveryView(code, intro, done) {
+  V.innerHTML = `
+    <h2>Save your recovery code</h2>
+    <div class="card account-form">
+      <p>${intro}</p>
+      <p>If you ever forget your password, this code is the only way to reset it. We don't keep an email
+        address for you, and we can't show the code again.</p>
+      <p class="recovery-code">${esc(code)}</p>
+      <p><button type="button" class="ghost small" id="copy-code">Copy code</button></p>
+      <form id="code-form" novalidate>
+        <label class="check"><input type="checkbox" id="code-saved"> I've saved my recovery code</label>
+        <p class="form-error" role="alert"></p>
+        <button type="submit">Continue</button>
+      </form>
+    </div>
+    <p><small>Lost the code later on? While you still know your password, you can make a new one on your
+      profile page.</small></p>`;
+  window.scrollTo(0, 0);
+  $("#copy-code").onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      toast("Recovery code copied");
+    } catch (e) { toast("Couldn't copy it. Select the code and copy it yourself."); }
+  };
+  const form = $("#code-form"), error = form.querySelector(".form-error");
+  $("#code-saved").onchange = () => { error.textContent = ""; };
+  form.onsubmit = e => {
+    e.preventDefault();
+    if (!$("#code-saved").checked) {
+      error.textContent = "Save the code somewhere safe, then tick the box.";
+      $("#code-saved").focus();
+      return;
+    }
+    done();
+  };
+}
+
+// Who you are on the site, with the things only the account's owner may do. Changing the
+// username or password, making a new recovery code and deleting the account each ask for the
+// current password first.
+function profile() {
+  const course = courseLessons();
+  const quizzes = Object.keys(ME.quiz).filter(t => BY_ID[t]).length;
+  const joined = ME.joined ? new Date(ME.joined.replace(" ", "T") + "Z")
+    .toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) : "";
+  const remove = deleteControls();
+  // Lets a password manager tie each password box to the account.
+  const who = `<input type="text" autocomplete="username" value="${esc(ME.username)}" hidden>`;
+  const current = id => field(id, "Current password",
+    'name="current" type="password" autocomplete="current-password" maxlength="200" data-pw required');
+  const CURRENT_RULE = v => v ? "" : "Enter your current password.";
+  V.innerHTML = `
+    <h2>Your profile</h2>
+    <div class="card">
+      <dl class="facts">
+        <div><dt>Username</dt><dd>${esc(ME.username)}</dd></div>
+        ${joined ? `<div><dt>Member since</dt><dd>${joined}</dd></div>` : ""}
+      </dl>
+      <p><small>Your username is only for signing in. Other people see your display name.</small></p>
+      ${nameRow()}
+    </div>
+
+    <div class="tiles">
+      <div class="tile"><b>${course.filter(l => isDone(l.id)).length}<small>/${course.length}</small></b><span>course topics understood</span></div>
+      <div class="tile"><b>${ME.streak}${ME.streak ? " \u{1F525}" : ""}</b><span>day streak</span></div>
+      <div class="tile"><b>${quizzes}</b><span>${quizzes === 1 ? "quiz" : "quizzes"} taken</span></div>
+    </div>
+    <p><a href="#/dashboard">See all my progress</a></p>
+
+    <h3>Username</h3>
+    <form class="card account-form" id="username-form" novalidate>
+      <p>To change the name you sign in with, enter the new one and your current password.</p>
+      ${field("u-new", "New username", `name="username" autocomplete="off" maxlength="20" ${PLAIN_TEXT} required`,
+        "3 to 20 letters, numbers or _.")}
+      ${current("u-pass")}
+      <p class="form-error" role="alert"></p>
+      <button type="submit">Change username</button>
+    </form>
+
+    <h3>Password</h3>
+    <form class="card account-form" id="password-form" novalidate>
+      <p>To prove this is your account, enter your current password first.</p>
+      ${who}
+      ${current("p-current")}
+      ${field("p-new", "New password", 'name="new" type="password" autocomplete="new-password" maxlength="200" data-pw required',
+        "At least 8 characters. Changing it signs you out of every other browser.")}
+      ${SHOW_PASSWORD.replace("Show password", "Show passwords")}
+      <p class="form-error" role="alert"></p>
+      <button type="submit">Change password</button>
+    </form>
+
+    <h3>Recovery code</h3>
+    <form class="card account-form" id="recovery-form" novalidate>
+      <p>${ME.recovery ? `Your account has a recovery code: it resets your password if you forget it. If you've
+        lost the code, make a new one here. The old one stops working.`
+        : `<b>Your account has no recovery code yet.</b> Make one now: it is the only way to reset your
+        password if you forget it.`}</p>
+      ${who}
+      ${current("r-current")}
+      <p class="form-error" role="alert"></p>
+      <button type="submit">Make a new recovery code</button>
+    </form>
+
+    <h3>Signing out</h3>
+    <div class="card">
+      <p>On a shared computer, sign out when you're done. If you think someone else has got into your
+        account, change your password: that signs them out too.</p>
+      <div class="row">
+        <button data-sign-out>Sign out</button>
+        <button class="ghost" data-sign-out="all">Sign out of every browser</button>
+      </div>
+    </div>
+
+    <h3>Delete your account</h3>
+    <div class="card">
+      <p>This removes your account and everything saved in it, for good. An account that isn't used for
+        12 months is deleted on its own.</p>
+      ${remove.button}
+      ${remove.form}
+    </div>`;
+
+  wireName(profile);
+  wireForm($("#username-form"), {
+    username: v => !v.trim() ? "Enter the new username." : USERNAME_OK.test(v.trim()) ? ""
+      : "Use 3 to 20 letters, numbers or _ (no spaces).",
+    current: CURRENT_RULE
+  }, async data => {
+    const r = await api("/auth/username", { method: "POST", body: { username: data.username, password: data.current } });
+    ME.username = r.username;
+    profile();
+    toast(`You now sign in as ${r.username}`);
+  });
+  const passwords = $("#password-form");
+  wireForm(passwords, {
+    current: CURRENT_RULE,
+    new: v => !v ? "Choose a new password." : v.length < 8 ? "Use at least 8 characters." : ""
+  }, async data => {
+    await api("/auth/password", { method: "POST", body: data });
+    passwords.reset();
+    passwords.querySelectorAll("[data-pw]").forEach(i => { i.type = "password"; });
+    toast("Password changed. Other browsers were signed out.");
+  });
+  wireForm($("#recovery-form"), { current: CURRENT_RULE }, async data => {
+    const r = await api("/auth/recovery", { method: "POST", body: { password: data.current } });
+    ME.recovery = true;
+    recoveryView(r.recovery, "This is your new recovery code. Any code you had before no longer works.", profile);
+  });
+  wireDelete();
 }
 
 // ---------- Formula sheet ----------
@@ -863,7 +1260,7 @@ async function forum(_, params) {
         await api("/answers/" + t.dataset.delAnswer, { method: "DELETE" });
         toast("Reply deleted");
       } else if (t.dataset.block) {
-        if (!confirm("Block this person? Their browser is locked out and everything they posted is deleted.")) return;
+        if (!confirm("Block this person? They are locked out and everything they posted is deleted.")) return;
         await api("/admin/block", { method: "POST", body: { kind: t.dataset.block, id: +t.dataset.id } });
         toast("Blocked, and their posts deleted");
       } else if (t.dataset.report) {
@@ -1473,7 +1870,7 @@ async function admin() {
         if (!confirm("Delete this post?")) return;
         await api((post.kind === "q" ? "/questions/" : "/answers/") + post.id, { method: "DELETE" });
       } else if (t.dataset.block) {
-        if (!confirm("Block this person? Their browser is locked out and everything they posted is deleted.")) return;
+        if (!confirm("Block this person? They are locked out and everything they posted is deleted.")) return;
         await api("/admin/block", { method: "POST", body: post });
       } else if (t.dataset.dismiss) {
         await api("/admin/reports/dismiss", { method: "POST", body: post });
@@ -1587,6 +1984,7 @@ function renderLanding() {
       <small>${l.unit === "Extra" ? "Extra topic" : esc(l.unit)}</small>`;
     note.innerHTML = done
       ? `You've understood <b>${done} of ${course.length}</b> lessons. This one takes about ${l.minutes} minutes.`
+      : ME.username ? `Signed in as <b>${esc(ME.username)}</b>. This lesson takes about ${l.minutes} minutes.`
       : `No sign-up needed, and your progress saves in this browser. This lesson takes about ${l.minutes} minutes.`;
   } else {
     cta.href = "#/formulas";
@@ -1780,6 +2178,12 @@ function startGraph() {
     offline();
   }
   updateProgress();
+  updateAccountLinks();
   route();
   startGraph();
+  // A message left by restart() just before the page reloaded.
+  try {
+    const flash = sessionStorage.getItem("flash");
+    if (flash) { sessionStorage.removeItem("flash"); toast(flash); }
+  } catch (e) { /* private window */ }
 })();

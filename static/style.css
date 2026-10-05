@@ -212,6 +212,19 @@ kbd, code {
 }
 .progress-link svg { width: 32px; height: 32px; flex: none; transform: rotate(-90deg); }
 .progress-link[aria-current="page"] { color: var(--accent); }
+.account-link {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: 10px;
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 15px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.account-link[aria-current="page"] { color: var(--accent); }
 .pr-track { fill: none; stroke: var(--rule); stroke-width: 4; }
 .pr-fill { fill: none; stroke: var(--ok); stroke-width: 4; stroke-linecap: round; transition: stroke-dasharray 0.6s ease; }
 
@@ -557,6 +570,38 @@ button.link {
 .field .hint { display: block; margin-top: 4px; font-size: 14px; }
 .form-error { margin: 0 0 12px; color: var(--bad); font-weight: 700; }
 .form-error:empty { display: none; }
+.field .hint:empty { display: none; }
+.field.invalid input { border-color: var(--bad); }
+.field.invalid input:focus { box-shadow: 0 0 0 3px var(--bad-bg); }
+.field.invalid .hint { color: var(--bad); font-weight: 700; }
+.check { display: flex; align-items: center; gap: 8px; min-height: 44px; margin: -6px 0 8px; }
+.check input { margin: 0; width: 18px; height: 18px; }
+button[aria-busy="true"] { cursor: progress; opacity: 0.7; }
+.account-form { max-width: 460px; }
+.account-form button[type="submit"] { width: 100%; }
+.account-switch { margin: 16px 0 10px; }
+.guest-option { margin-top: 14px; text-align: center; }
+.guest-option .or { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; color: var(--graphite); font-size: 14px; }
+.guest-option .or::before, .guest-option .or::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+.guest-option .btn { width: 100%; margin: 0; }
+.guest-option small { display: block; margin-top: 8px; }
+.check + .hint { display: block; margin: -4px 0 12px; font-size: 14px; }
+.recovery-code {
+  margin: 14px 0 8px;
+  padding: 14px 10px;
+  border: 2px dashed var(--rule-strong);
+  border-radius: 10px;
+  background: var(--paper);
+  font: 700 clamp(17px, 4.6vw, 22px)/1.4 var(--mono);
+  letter-spacing: 0.04em;
+  text-align: center;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.facts { display: grid; gap: 8px; margin: 0 0 12px; }
+.facts div { display: flex; flex-wrap: wrap; gap: 2px 14px; }
+.facts dt { min-width: 120px; color: var(--graphite); }
+.facts dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
 .account-actions { margin-top: 14px; }
 .delete-data { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule); }
 .delete-data .field { max-width: 360px; }
@@ -1380,6 +1425,7 @@ body.chat-open .chat-fab { display: none; }
   .logo { font-size: 19px; }
   .top-tools { gap: 6px; }
   #theme { display: none; }
+  .account-link { display: none; }  /* it's in the menu */
   .menu-btn { display: inline-grid; }
 
   .nav {

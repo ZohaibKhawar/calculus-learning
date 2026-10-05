@@ -5,8 +5,9 @@ Run it:
     python server.py
 Then open http://localhost:5000
 
-There are no accounts. The server gives each browser a random ID the first time
-it visits, kept in a signed, HttpOnly cookie, so progress, notes and posts belong to it.
+Nobody has to sign in. The server gives each browser a random ID the first time it
+visits, kept in a signed, HttpOnly cookie, so progress, notes and posts belong to it.
+An optional account (a username and password) lets someone reach that ID from other browsers.
 """
 import hmac
 import json
@@ -28,6 +29,7 @@ from markupsafe import escape
 from werkzeug.exceptions import HTTPException, TooManyRequests
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+import accounts
 import ai
 import chatbot
 import moderation
@@ -72,6 +74,14 @@ CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL DEFAULT '',
     last_topic TEXT,
+    created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS accounts (  -- optional sign-in for a visitor ID
+    username TEXT NOT NULL PRIMARY KEY,      -- lower case; only for signing in, never shown to others
+    user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    password_hash TEXT NOT NULL,
+    recovery_hash TEXT,                      -- of the recovery code that resets a forgotten password
+    session_ver INTEGER NOT NULL DEFAULT 1,  -- raised to sign out every browser at once
     created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS progress (
@@ -227,6 +237,9 @@ def init_db():
         for table in ("questions", "answers"):
             if "score" not in [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN score INTEGER")  # fixed names from this list
+        # Accounts made before recovery codes lack this column.
+        if "recovery_hash" not in [r[1] for r in conn.execute("PRAGMA table_info(accounts)")]:
+            conn.execute("ALTER TABLE accounts ADD COLUMN recovery_hash TEXT")
         # "Marked helpful by the asker" was replaced by likes: each mark becomes the asker's like.
         if "helpful" in [r[1] for r in conn.execute("PRAGMA table_info(answers)")]:
             conn.execute("""INSERT OR IGNORE INTO votes (user_id, kind, target_id, value)
@@ -236,8 +249,9 @@ def init_db():
                 conn.execute("ALTER TABLE answers DROP COLUMN helpful")
             except sqlite3.OperationalError:  # SQLite before 3.35 can't drop a column
                 conn.execute("UPDATE answers SET helpful = 0")
-        # Older versions had sign-in (email codes, usernames, passwords, Google). Forget all of
-        # it; the browsers that were signed in under an ADMIN_USERS name stay moderators.
+        # Versions before October 2026 kept sign-in details (email codes, usernames, passwords,
+        # Google) on the users row. Forget all of it; the browsers that were signed in under an
+        # ADMIN_USERS name stay moderators. Today's accounts live in their own table.
         if "username" in have:
             conn.execute("UPDATE users SET admin = 1 WHERE username IN (SELECT value FROM json_each(?))",
                          (json.dumps(sorted(settings.ADMIN_USERS)),))
@@ -303,33 +317,72 @@ def within(rule, who, max_hits, seconds):
 
 
 # ---------- Identity ----------
-# There is no sign-in. A browser's first API call gets a random visitor ID, kept in a
+# Nobody has to sign in. A browser's first API call gets a random visitor ID, kept in a
 # signed, HttpOnly cookie; its progress, notes and posts belong to that ID.
+# An account (see "Accounts" below) is a username and password for one visitor ID. Signing
+# in puts that ID in the cookie, next to the account's session version.
 # Before cookies, the browser made its own ID and sent it as X-User. A browser that
 # still has one of those can claim it once, so nobody loses their progress; brand-new
 # IDs are only ever made here, and are rate limited per IP.
 LEGACY_ID_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 
 
+def visitor(uid):
+    """The row for a visitor ID, with its account's username and session version if it has one."""
+    return one("""SELECT u.blocked, u.last_seen, a.username, a.session_ver
+                  FROM users u LEFT JOIN accounts a ON a.user_id = u.id WHERE u.id = ?""", (uid,)) if uid else None
+
+
+def sign_in(uid, ver):
+    """Put an account's visitor ID in a fresh cookie. The ID this browser had on its own, if it
+    still has one, is kept next to it; signing out goes back to it."""
+    before = session.get("uid")
+    own = visitor(before)
+    if not own or own["username"]:  # no ID of its own right now: keep the one put aside earlier
+        before = session.get("anon")
+    session.clear()
+    session.permanent = True
+    session["uid"] = uid
+    session["ver"] = ver
+    if before and before != uid:
+        session["anon"] = before
+
+
+def sign_out():
+    """Take the account out of this browser's cookie, and go back to the ID it had before signing in."""
+    before = session.get("anon")
+    session.clear()
+    u = visitor(before)
+    if u and not u["username"]:
+        session.permanent = True
+        session["uid"] = before
+
+
 def current_user():
     """Return this browser's visitor ID from its signed cookie, issuing a new one if needed."""
     uid = session.get("uid")
-    u = one("SELECT blocked, last_seen FROM users WHERE id = ?", (uid,)) if uid else None
+    u = visitor(uid)
+    # An account's ID only counts with the session version it was signed in under, so a cookie
+    # from before a password change, or from before the ID had an account, stops working.
+    if uid and (not u or (u["username"] and session.get("ver") != u["session_ver"])):
+        sign_out()
+        uid = session.get("uid")
+        u = visitor(uid)
     if not u:
         legacy = request.headers.get("X-User", "")
-        u = one("SELECT blocked, last_seen FROM users WHERE id = ?", (legacy,)) if LEGACY_ID_RE.match(legacy) else None
-        if u:
+        u = visitor(legacy) if LEGACY_ID_RE.match(legacy) else None
+        if u and not u["username"]:
             uid = legacy
         else:
             limit("new-id", client_ip(), 30, 3600, "Too many new visitors from your network.")
             limit("new-id", client_ip(), 200, 86400, "Too many new visitors from your network.")
             uid = secrets.token_urlsafe(24)
             run("INSERT INTO users (id) VALUES (?)", (uid,))
-            u = {"blocked": 0, "last_seen": None}
+            u = {"blocked": 0, "last_seen": None, "username": None}
         session.permanent = True
         session["uid"] = uid
     if u["blocked"]:
-        abort(403, "This browser has been blocked from CalcLearners.")
+        abort(403, f"This {'account' if u['username'] else 'browser'} has been blocked from CalcLearners.")
     today = date.today().isoformat()
     if u["last_seen"] != today:  # first request of the day from this browser
         run("UPDATE users SET last_seen = ? WHERE id = ?", (today, uid))
@@ -371,8 +424,8 @@ RETENTION_DAYS = 365  # the privacy policy promises this: keep it in step with p
 
 
 def forget_visitor(uid, posts):
-    """Delete what is saved for a visitor ID. Their forum posts go too when `posts` is true;
-    otherwise the posts stay up, linked to no one."""
+    """Delete what is saved for a visitor ID, and its account if it has one. Their forum posts
+    go too when `posts` is true; otherwise the posts stay up, linked to no one."""
     mine = rows("SELECT stored_name, video_id FROM uploads WHERE user_id = ?", (uid,))
     # One fixed statement per table, as in /api/reset.
     for sql in ("DELETE FROM progress WHERE user_id = ?",
@@ -383,7 +436,8 @@ def forget_visitor(uid, posts):
                 "DELETE FROM feedback WHERE user_id = ?",
                 "DELETE FROM uploads WHERE user_id = ?",
                 "DELETE FROM reports WHERE user_id = ?",
-                "DELETE FROM votes WHERE user_id = ?"):
+                "DELETE FROM votes WHERE user_id = ?",
+                "DELETE FROM accounts WHERE user_id = ?"):
         run(sql, (uid,))
     if posts:  # the same way as in block_author
         for sql in ("DELETE FROM votes WHERE kind = 'a' AND target_id IN (SELECT id FROM answers WHERE user_id = ?)",
@@ -407,7 +461,7 @@ def forget_visitor(uid, posts):
 
 
 def forget_inactive():
-    """Browsers that haven't visited for a year are forgotten, a few at a time."""
+    """Browsers and accounts that haven't visited for a year are forgotten, a few at a time."""
     cutoff = (date.today() - timedelta(days=RETENTION_DAYS)).isoformat()
     for r in rows("""SELECT id FROM users WHERE COALESCE(last_seen, substr(created, 1, 10)) < ?
                      AND blocked = 0 AND admin = 0 LIMIT 25""", (cutoff,)):
@@ -603,11 +657,262 @@ def lessons():
     return jsonify(LESSONS)
 
 
+# ---------- Accounts ----------
+# Optional. Creating an account gives this browser's visitor ID a username and password, so
+# everything already saved for it comes along. Signing in from another browser switches that
+# browser to the account's ID. What it had saved under its own ID is moved into the account
+# when the person asks for that (merge_visitor); otherwise it is left alone, and is what the
+# browser goes back to on signing out.
+# There is no email address to send a reset link to. A forgotten password is reset with a
+# recovery code: shown once when it is made, and kept here only as a hash.
+SIGN_IN_WRONG = "That username or password isn't right."
+RESET_WRONG = "That username or recovery code isn't right."
+TAKEN = "That username is taken. Try another one."
+BLOCKED = "This account has been blocked from CalcLearners."
+
+
+def account_for(uid):
+    return one("SELECT username, password_hash, session_ver FROM accounts WHERE user_id = ?", (uid,))
+
+
+def account_named(username):
+    return one("""SELECT a.user_id, a.password_hash, a.recovery_hash, a.session_ver, u.blocked
+                  FROM accounts a JOIN users u ON u.id = a.user_id WHERE a.username = ?""", (username,))
+
+
+def has_saved(uid):
+    """Whether a visitor ID has any study data or posts: something worth bringing into an account."""
+    return bool(one("""SELECT EXISTS (SELECT 1 FROM progress WHERE user_id = :u)
+                           OR EXISTS (SELECT 1 FROM quiz_scores WHERE user_id = :u)
+                           OR EXISTS (SELECT 1 FROM notes WHERE user_id = :u AND body != '')
+                           OR EXISTS (SELECT 1 FROM video_progress WHERE user_id = :u)
+                           OR EXISTS (SELECT 1 FROM uploads WHERE user_id = :u)
+                           OR EXISTS (SELECT 1 FROM questions WHERE user_id = :u)
+                           OR EXISTS (SELECT 1 FROM answers WHERE user_id = :u) AS saved""", {"u": uid})["saved"])
+
+
+# Moving what one visitor ID (:src) has saved into another (:dst). Every statement is fixed;
+# the two IDs only ever travel as data. Where both have the same thing, :dst's is kept.
+MERGE_SQL = (
+    """INSERT OR IGNORE INTO progress (user_id, topic_id, updated)
+       SELECT :dst, topic_id, updated FROM progress WHERE user_id = :src""",
+    "UPDATE quiz_scores SET user_id = :dst WHERE user_id = :src",
+    "INSERT OR IGNORE INTO activity (user_id, day) SELECT :dst, day FROM activity WHERE user_id = :src",
+    # The best score for each level, as when a level is played again.
+    """INSERT INTO video_progress (user_id, video_id, episode, level, score, total, updated)
+       SELECT :dst, video_id, episode, level, score, total, updated FROM video_progress WHERE user_id = :src
+       ON CONFLICT (user_id, video_id, episode, level)
+       DO UPDATE SET score = MAX(score, excluded.score), total = excluded.total""",
+    "UPDATE uploads SET user_id = :dst WHERE user_id = :src",
+    "UPDATE feedback SET user_id = :dst WHERE user_id = :src",
+    # Nobody votes on their own posts: drop the votes each made on the other's, then bring the rest.
+    """DELETE FROM votes WHERE user_id = :dst AND (
+              (kind = 'q' AND target_id IN (SELECT id FROM questions WHERE user_id = :src))
+           OR (kind = 'a' AND target_id IN (SELECT id FROM answers WHERE user_id = :src)))""",
+    """INSERT OR IGNORE INTO votes (user_id, kind, target_id, value)
+       SELECT :dst, kind, target_id, value FROM votes WHERE user_id = :src AND NOT (
+              (kind = 'q' AND target_id IN (SELECT id FROM questions WHERE user_id = :dst))
+           OR (kind = 'a' AND target_id IN (SELECT id FROM answers WHERE user_id = :dst)))""",
+    """INSERT OR IGNORE INTO reports (user_id, kind, target_id, created)
+       SELECT :dst, kind, target_id, created FROM reports WHERE user_id = :src""",
+    "UPDATE questions SET user_id = :dst WHERE user_id = :src",
+    "UPDATE answers SET user_id = :dst WHERE user_id = :src",
+    """UPDATE users SET name = CASE WHEN name = '' THEN (SELECT name FROM users WHERE id = :src) ELSE name END,
+                        last_topic = COALESCE(last_topic, (SELECT last_topic FROM users WHERE id = :src)),
+                        source = COALESCE(source, (SELECT source FROM users WHERE id = :src))
+       WHERE id = :dst""",
+)
+
+
+def merge_visitor(src, dst):
+    """Move everything saved for one visitor ID into another, then forget the first. This is how
+    what a browser saved on its own is added to an account when its owner signs in."""
+    conn, ids = db(), {"src": src, "dst": dst}
+    try:  # all of it or none of it
+        for sql in MERGE_SQL:
+            conn.execute(sql, ids)
+        # Notes on the same lesson are joined, the account's first.
+        for n in conn.execute("SELECT topic_id, body FROM notes WHERE user_id = ? AND body != ''", (src,)).fetchall():
+            mine = conn.execute("SELECT body FROM notes WHERE user_id = ? AND topic_id = ?",
+                                (dst, n["topic_id"])).fetchone()
+            if mine and n["body"] in mine["body"]:
+                continue
+            text = f"{mine['body']}\n\n{n['body']}" if mine and mine["body"].strip() else n["body"]
+            conn.execute("""INSERT INTO notes (user_id, topic_id, body) VALUES (?, ?, ?)
+                            ON CONFLICT (user_id, topic_id)
+                            DO UPDATE SET body = excluded.body, updated = CURRENT_TIMESTAMP""",
+                         (dst, n["topic_id"], text[:10000]))
+        conn.commit()
+    except sqlite3.Error:
+        conn.rollback()
+        raise
+    forget_visitor(src, posts=False)  # what stayed behind (a vote both had made, say), and the ID itself
+
+
+@app.post("/api/auth/signup")
+def signup():
+    data = body()
+    username = str(data.get("username", "")).strip().lower()
+    password = str(data.get("password", ""))
+    problem = accounts.username_problem(username) or accounts.password_problem(password, username)
+    if problem:
+        abort(400, problem)
+    # Generous, because a whole class can sign up from one school network.
+    limit("signup", client_ip(), 40, 3600, "Lots of accounts are being created from your network.")
+    limit("signup", client_ip(), 200, 86400, "Lots of accounts are being created from your network.")
+    uid = current_user()
+    if account_for(uid):
+        abort(400, "You're already signed in. Sign out to create another account.")
+    if one("SELECT 1 FROM accounts WHERE username = ?", (username,)):
+        abort(409, TAKEN)
+    code = accounts.new_recovery_code()
+    try:
+        run("INSERT INTO accounts (username, user_id, password_hash, recovery_hash) VALUES (?, ?, ?, ?)",
+            (username, uid, accounts.hash_password(password), accounts.hash_recovery_code(code)))
+    except sqlite3.IntegrityError:  # someone took the name a moment ago
+        abort(409, TAKEN)
+    sign_in(uid, 1)
+    return jsonify(username=username, recovery=code)  # the code is shown this once
+
+
+@app.post("/api/auth/login")
+def login():
+    data = body()
+    username = str(data.get("username", "")).strip().lower()
+    password = str(data.get("password", ""))
+    limit("login-ip", client_ip(), 100, 600, "Too many sign-in tries from your network.")
+    if not accounts.USERNAME_RE.match(username):  # no account can have a name like this
+        abort(400, SIGN_IN_WRONG)
+    # Tight per account *and* network, so a stranger guessing wrong can't lock you out;
+    # a looser cap per account stops slow guessing spread over many networks.
+    limit("login", f"{username}|{client_ip()}", 10, 900, "Too many sign-in tries for this account.")
+    limit("login-acct", username, 100, 3600, "Too many sign-in tries for this account.")
+    acct = account_named(username)
+    # The same answer, after the same work, for an unknown username and a wrong password.
+    if not accounts.check_password(acct and acct["password_hash"], password):
+        abort(400, SIGN_IN_WRONG)
+    if acct["blocked"]:
+        abort(403, BLOCKED)
+    # When asked to, move what this browser saved on its own into the account. Otherwise it
+    # stays under the browser's own ID, which sign_in() keeps for signing out.
+    own_id = session.get("uid")
+    own = visitor(own_id)
+    merged = bool(data.get("merge") and own and not own["username"] and not own["blocked"] and has_saved(own_id))
+    if merged:
+        merge_visitor(own_id, acct["user_id"])
+    sign_in(acct["user_id"], acct["session_ver"])
+    return jsonify(username=username, merged=merged)
+
+
+@app.post("/api/auth/logout")
+def logout():
+    """Sign this browser out. With `everywhere`, every other browser is signed out too."""
+    uid = session.get("uid")
+    u = visitor(uid)
+    if u and not u["username"]:  # not signed in: the cookie holds this browser's own ID, which stays
+        return jsonify(ok=True)
+    if body().get("everywhere") and u and session.get("ver") == u["session_ver"]:
+        run("UPDATE accounts SET session_ver = session_ver + 1 WHERE user_id = ?", (uid,))
+    sign_out()
+    return jsonify(ok=True)
+
+
+# The next three change who can get into an account, so each asks for its password first.
+@app.post("/api/auth/password")
+def change_password():
+    """Change the password. Every other browser signed in to the account is signed out."""
+    uid = current_user()
+    acct = account_for(uid) or abort(401, "Sign in to change your password.")
+    limit("password", uid, 10, 3600, "Too many tries at changing your password.")
+    data = body()
+    if not accounts.check_password(acct["password_hash"], str(data.get("current", ""))):
+        abort(400, "Your current password isn't right.")
+    new = str(data.get("new", ""))
+    problem = accounts.password_problem(new, acct["username"])
+    if problem:
+        abort(400, problem)
+    run("UPDATE accounts SET password_hash = ?, session_ver = session_ver + 1 WHERE user_id = ?",
+        (accounts.hash_password(new), uid))
+    session["ver"] = account_for(uid)["session_ver"]  # this browser stays signed in
+    return jsonify(ok=True)
+
+
+@app.post("/api/auth/username")
+def change_username():
+    """Change the name the account signs in with."""
+    uid = current_user()
+    acct = account_for(uid) or abort(401, "Sign in to change your username.")
+    data = body()
+    username = str(data.get("username", "")).strip().lower()
+    password = str(data.get("password", ""))
+    problem = accounts.username_problem(username)
+    if problem:
+        abort(400, problem)
+    if username == acct["username"]:
+        abort(400, "That's already your username.")
+    limit("username", uid, 10, 86400, "Too many tries at changing your username.")
+    if not accounts.check_password(acct["password_hash"], password):
+        abort(400, "That password isn't right.")
+    if password.lower() == username:
+        abort(400, "Your username can't be the same as your password.")
+    try:
+        run("UPDATE accounts SET username = ? WHERE user_id = ?", (username, uid))
+    except sqlite3.IntegrityError:
+        abort(409, TAKEN)
+    return jsonify(username=username)
+
+
+@app.post("/api/auth/recovery")
+def make_recovery_code():
+    """Give the account a new recovery code. The one it had stops working."""
+    uid = current_user()
+    acct = account_for(uid) or abort(401, "Sign in to get a recovery code.")
+    limit("recovery", uid, 10, 3600, "Too many tries at making a recovery code.")
+    if not accounts.check_password(acct["password_hash"], str(body().get("password", ""))):
+        abort(400, "That password isn't right.")
+    code = accounts.new_recovery_code()
+    run("UPDATE accounts SET recovery_hash = ? WHERE user_id = ?", (accounts.hash_recovery_code(code), uid))
+    return jsonify(recovery=code)  # the code is shown this once
+
+
+@app.post("/api/auth/reset")
+def reset_password():
+    """For someone who forgot their password: set a new one with the account's recovery code.
+    The code works once. A new one comes back with the answer, every browser that was signed in
+    to the account is signed out, and this one is signed in."""
+    data = body()
+    username = str(data.get("username", "")).strip().lower()
+    password = str(data.get("password", ""))
+    limit("pw-reset-ip", client_ip(), 30, 600, "Too many password resets from your network.")
+    problem = accounts.password_problem(password, username)
+    if problem:
+        abort(400, problem)
+    if not accounts.USERNAME_RE.match(username):  # no account can have a name like this
+        abort(400, RESET_WRONG)
+    limit("pw-reset", f"{username}|{client_ip()}", 5, 900, "Too many tries at resetting this account's password.")
+    limit("pw-reset-acct", username, 30, 3600, "Too many tries at resetting this account's password.")
+    acct = account_named(username)
+    # The same answer, after the same work, for an unknown username, an account with no code
+    # and a wrong code.
+    if not accounts.check_recovery_code(acct and acct["recovery_hash"], str(data.get("code", ""))):
+        abort(400, RESET_WRONG)
+    if acct["blocked"]:
+        abort(403, BLOCKED)
+    code = accounts.new_recovery_code()
+    run("""UPDATE accounts SET password_hash = ?, recovery_hash = ?, session_ver = session_ver + 1
+           WHERE user_id = ?""",
+        (accounts.hash_password(password), accounts.hash_recovery_code(code), acct["user_id"]))
+    sign_in(acct["user_id"], account_for(acct["user_id"])["session_ver"])
+    return jsonify(username=username, recovery=code)  # the code is shown this once
+
+
 # ---------- Learner profile & progress ----------
 @app.get("/api/me")
 def me():
     uid = current_user()
-    user = one("SELECT name, last_topic FROM users WHERE id = ?", (uid,))
+    user = one("""SELECT u.name, u.last_topic, a.username, a.created AS joined,
+                         a.recovery_hash IS NOT NULL AS recovery
+                  FROM users u LEFT JOIN accounts a ON a.user_id = u.id WHERE u.id = ?""", (uid,))
     # Only report topics that still exist (lessons get reorganized over time).
     quiz = {}
     for r in rows("""SELECT topic_id, score, total FROM quiz_scores
@@ -621,6 +926,11 @@ def me():
         q["attempts"] += 1
     return jsonify(
         name=user["name"],
+        username=user["username"],  # null unless signed in to an account
+        joined=user["joined"],      # when the account was created
+        recovery=bool(user["recovery"]),  # the account has a recovery code
+        # A browser on its own with something it could bring into an account at sign-in.
+        saved=not user["username"] and has_saved(uid),
         admin=is_admin(uid),
         last_topic=user["last_topic"] if user["last_topic"] in LESSON_IDS else None,
         done=[r["topic_id"] for r in rows("SELECT topic_id FROM progress WHERE user_id = ?", (uid,))
@@ -708,16 +1018,21 @@ def reset():
 
 @app.post("/api/me/delete")
 def delete_my_data():
-    """Delete everything saved for this browser's visitor ID, then forget the ID."""
+    """Delete everything saved for this visitor ID, and its account if it has one, then forget the ID."""
     uid = current_user()
     limit("delete-me", uid, 5, 3600, "Too many tries at deleting your data.")
     limit("delete-me-ip", client_ip(), 20, 3600, "Too many tries at deleting data from your network.")
-    # It can't be undone, so the page asks for a typed word first.
-    if str(body().get("confirm", "")).strip().upper() != "DELETE":
+    # It can't be undone, so the page asks for the account's password first, or for a typed
+    # word when there is no account.
+    acct = account_for(uid)
+    if acct:
+        if not accounts.check_password(acct["password_hash"], str(body().get("password", ""))):
+            abort(400, "That password isn't right.")
+    elif str(body().get("confirm", "")).strip().upper() != "DELETE":
         abort(400, "Type DELETE to confirm.")
 
     forget_visitor(uid, posts=True)
-    session.clear()
+    sign_out()
     return jsonify(ok=True)
 
 

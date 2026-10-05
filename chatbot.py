@@ -25,10 +25,15 @@ MAX_PICTURE_BYTES = 3 * 1024 * 1024  # the page shrinks pictures first, so real 
 # Where things are on the site. CalcBot's AI is told all of these; without the AI,
 # a message that matches the pattern gets that answer.
 SITE = [
-    (r"\b(sign ?up|sign ?in|log ?in|account|register|password|saves?|saved|saving|progress|streak)\b",
-     "There's no sign-up. Your progress, quiz scores and notes save automatically in this browser, so come "
-     "back in the same browser to pick up where you stopped. [My progress](#/dashboard) shows what you've "
-     "finished and your streak."),
+    (r"\b(sign ?up|sign ?in|sign ?out|log ?in|log ?out|accounts?|register|passwords?|usernames?|profile)\b",
+     "You don't have to sign up: everything works without an account. To open your progress on another phone "
+     "or computer, [create an account](#/account?new=1) with a username and a password (no email), then "
+     "[sign in](#/account) there. Once signed in, the same page is your profile, where you can change your "
+     "username or password, or delete the account. Forgot your password? [Reset it](#/account?reset=1) with "
+     "the recovery code you saved when you created the account."),
+    (r"\b(saves?|saved|saving|progress|streak)\b",
+     "Your progress, quiz scores and notes save automatically: in this browser, or to your account when you "
+     "are signed in. [My progress](#/dashboard) shows what you've finished and your streak."),
     (r"\b(formulas?|cheat ?sheet)\b",
      "The [formula sheet](#/formulas) has every formula from the course on one searchable, printable page."),
     (r"\b(videos?|watch|episodes?)\b",
@@ -47,10 +52,11 @@ SITE = [
      "The moon or sun button at the top of the page switches between light and dark mode. On a phone it's "
      "in the menu."),
     (r"\b(free|costs?|pay|paid|price|subscription|ads?)\b",
-     "CalcLearners is free. There's no sign-up, no subscription and no ads on the site."),
-    (r"\b(delete|reset|privacy|my data|display name|username|nickname)\b",
+     "CalcLearners is free. You don't have to sign up, and there's no subscription and no ads on the site."),
+    (r"\b(delete|reset|privacy|my data|display name|nickname)\b",
      "On [My progress](#/dashboard) you can set the display name shown on your forum posts, reset your "
-     "progress, or delete everything saved for this browser."),
+     "progress, or delete everything saved for this browser. If you have an account, deleting it is on "
+     "your [profile page](#/account)."),
     (r"\b(feedback|bugs?|broken|suggestions?)\b",
      "Tell us on the [feedback page](#/feedback). Bug reports and ideas are both welcome."),
     (r"\b(where (do|should) i (start|begin)|get started|what (should|do) i (learn|study|do) (first|next)|"

@@ -29,13 +29,14 @@
   </header>
   <main class="legal" id="main">
     <h1>Cookie Policy</h1>
-    <p class="updated">Last updated: October 4, 2026</p>
+    <p class="updated">Last updated: October 5, 2026</p>
 
     <p>This page lists everything CalcLearners stores in your browser and why. It goes with our
       <a href="privacy.html">Privacy Policy</a> and <a href="terms.html">Terms and Conditions</a>.</p>
 
     <h2>The short version</h2>
-    <p>We set one cookie. It holds a random ID so the site can save your progress without an account. We don't
+    <p>We set one cookie. It holds a random ID so the site can save your progress without an account, and it
+      keeps you signed in if you have one. We don't
       use advertising or analytics cookies, and we don't track you across other websites. A few preferences are
       saved in your browser so the site remembers them.</p>
 
@@ -52,7 +53,10 @@
           <tr>
             <td><code>cl_id</code></td>
             <td>Cookie (essential)</td>
-            <td>Holds your visitor ID, so your progress, notes and posts are saved for this browser. It is in a
+            <td>Holds your visitor ID, so your progress, notes and posts are saved for this browser. While you
+              are signed in to an account it holds the account's ID instead, which is what keeps you signed in.
+              Unless you moved what the browser had saved into the account, the ID the browser had before is
+              kept next to it, so you go back to it when you sign out. It is in a
               signed form that page scripts can't read, and it is only sent over HTTPS. If one of our ads brought
               you here, we note that against the ID, to see whether visitors from the ad come back.</td>
             <td>Up to 12 months after your last visit.</td>
@@ -79,7 +83,14 @@
             <td><code>chat</code></td>
             <td>Session storage</td>
             <td>Keeps your conversation with CalcBot, the study helper, while you move between pages.</td>
-            <td>Until you close the tab or start a new chat.</td>
+            <td>Until you close the tab, start a new chat or sign out.</td>
+          </tr>
+          <tr>
+            <td><code>flash</code></td>
+            <td>Session storage</td>
+            <td>Holds a short message, such as "Signed out", across the page reload that follows signing in
+              or out.</td>
+            <td>Until the page has shown it, a moment later.</td>
           </tr>
           <tr>
             <td><code>uid</code></td>
@@ -106,7 +117,8 @@
     <h2>4. Your choices</h2>
     <ul>
       <li>"Delete my data" on the My progress page deletes what is saved for your browser and gives it a fresh
-        visitor ID.</li>
+        visitor ID. With an account, "Delete my account" on your profile page does the same for the account.</li>
+      <li>Signing out takes your account out of the cookie. The account itself stays until you delete it.</li>
       <li>You can delete cookies and site data in your browser's settings at any time. The site will then treat
         you as a new visitor: your saved progress is no longer connected to your browser, and your preferences
         go back to their defaults.</li>

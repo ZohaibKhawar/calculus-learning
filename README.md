@@ -13,6 +13,11 @@ plain HTML/CSS/JavaScript frontend.
   and 18 practice questions per episode (easy → expert). Your learning style picks
   whether a lesson opens as Watch, Read or Practice.
 - **Progress tracking**, a **formula sheet**, and a scroll-animated landing page.
+- **Optional accounts**: nobody has to sign in, but a username and password (no email) lets a learner open
+  their progress on another device, and signing in can bring along what that device had saved on its own.
+  A recovery code, shown once, resets a forgotten password. The profile page has sign-out everywhere, plus
+  changing the username, password or recovery code and deleting the account, which each ask for the current
+  password (`accounts.py`, the Accounts section of `server.py`).
 - **Q&A forum** with likes and dislikes, sorting (most liked, newest, oldest, most replies) and an automatic
   check that scores every post from 1 to 10 in context, so thanks and study tips get through but spam and
   insults don't (`moderation.py`).
