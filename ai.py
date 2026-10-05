@@ -6,7 +6,9 @@ from the site's own lessons and the forum check uses built-in rules.
 """
 import settings
 
-MODEL = "claude-opus-5-5"
+# Anthropic's lowest-cost model. A bigger one ("claude-sonnet-5-5", "claude-opus-5-5") is
+# better at math and costs more for every message.
+MODEL = "claude-haiku-4-5"
 
 _client = None
 
@@ -40,18 +42,15 @@ def ask(system, messages, max_tokens, timeout, schema=None):
     seconds instead of retrying.
     """
     import anthropic
-    output = {"effort": "low"}
-    if schema:
-        output["format"] = {"type": "json_schema", "schema": schema}
+    # With a schema, the answer comes back as JSON in exactly that shape.
+    shape = {"output_config": {"format": {"type": "json_schema", "schema": schema}}} if schema else {}
     try:
-        msg = client().with_options(timeout=timeout, max_retries=0).beta.messages.create(
+        msg = client().with_options(timeout=timeout, max_retries=0).messages.create(
             model=MODEL,
             max_tokens=max_tokens,
             system=system,
             messages=messages,
-            output_config=output,
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
+            **shape,
         )
     except anthropic.APIError as e:
         raise Unavailable(type(e).__name__)
