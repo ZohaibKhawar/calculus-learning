@@ -12,7 +12,11 @@ plain HTML/CSS/JavaScript frontend.
 - **Video lessons**: animated episodes with voiceover and captions, a reading version,
   and 18 practice questions per episode (easy → expert). Your learning style picks
   whether a lesson opens as Watch, Read or Practice.
-- **Progress tracking**, a **formula sheet**, a moderated **Q&A forum**, and a scroll-animated landing page.
+- **Progress tracking**, a **formula sheet**, and a scroll-animated landing page.
+- **Q&A forum** with likes and dislikes, sorting (most liked, newest, oldest, most replies) and an automatic
+  check that scores every post from 1 to 10 in context, so thanks and study tips get through but spam and
+  insults don't (`moderation.py`).
+- **CalcBot**, a study helper chat on every page that answers math, study and site questions (`chatbot.py`).
 - **A page per lesson for search engines** at `/lessons/<id>`, listed in `/sitemap.xml`
   (the app itself lives at one address, which search engines see as a single page).
 
@@ -28,5 +32,12 @@ Then open http://localhost:5000.
 Your progress, forum posts and uploaded files are stored locally in `calclearners.db`
 and `uploads/` (both git-ignored).
 
-Optional: set `ANTHROPIC_API_KEY` before starting the server to turn newly uploaded PDFs
-into video lessons with Claude.
+## Optional AI features
+
+Without a key the site still works: CalcBot answers from the lessons, and the forum check uses built-in rules.
+
+- Put `ANTHROPIC_API_KEY=...` in `secrets.env` (see `secrets.env.example`) and CalcBot's answers and the
+  forum check are done by Claude. Each chat message or post costs a little; the daily caps are at the top of
+  the chat and moderation sections in `server.py`.
+- Set `ANTHROPIC_API_KEY` as an environment variable before starting the server to also turn newly uploaded
+  PDFs into video lessons with Claude.

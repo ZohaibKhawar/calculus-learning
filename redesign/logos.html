@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logo mocks</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,800&display=swap">
+<style>
+  body { margin: 0; padding: 12px; font: 14px system-ui, sans-serif; background: #fff; color: #15233B; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+  .tile { display: flex; align-items: center; gap: 14px; padding: 14px; border-radius: 12px; }
+  .light { background: #F4F6F9; color: #15233B; --gold: #F0B429; --badge: #15233B; --glyph: #F0B429; --face: #15233B; }
+  .dark { background: #0F1729; color: #E8ECF4; --gold: #F5C451; --badge: #F5C451; --glyph: #0F1729; --face: #15233B; }
+  .big { width: 84px; height: 84px; flex: none; }
+  .lock { display: flex; align-items: center; gap: 8px; font: 800 20px/1 "Bricolage Grotesque", system-ui, sans-serif; letter-spacing: -0.01em; }
+  .lock svg { width: 26px; height: 26px; }
+  .tiny { width: 16px; height: 16px; }
+  h3 { margin: 0 0 6px; font-size: 14px; }
+</style></head><body>
+<template id="m1"><svg viewBox="0 0 48 48" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7v32h32" stroke="currentColor" stroke-width="5"/><path d="M36.4 14.3A10 10 0 1 0 36.4 29.7" stroke="var(--gold)" stroke-width="5"/></svg></template>
+<template id="m2"><svg viewBox="0 0 48 48" fill="none" stroke-linecap="round"><g fill="currentColor"><rect x="6" y="36" width="7" height="8" rx="2"/><rect x="16" y="30.6" width="7" height="13.4" rx="2"/><rect x="26" y="22.2" width="7" height="21.8" rx="2"/><rect x="36" y="10.8" width="7" height="33.2" rx="2"/></g><path d="M4 33.8Q24 31.4 44 5" stroke="var(--gold)" stroke-width="4"/></svg></template>
+<template id="m3"><svg viewBox="0 0 48 48" fill="none" stroke-linecap="round"><path d="M34.6 12.4A15 15 0 1 0 34.6 33.6" stroke="currentColor" stroke-width="5.5"/><circle cx="38.7" cy="19.9" r="3.6" stroke="var(--gold)" stroke-width="3"/></svg></template>
+<template id="m4"><svg viewBox="0 0 48 48" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="40" height="40" rx="11" fill="var(--badge)"/><path d="M31 15C31 10.5 25.2 10 24.6 16L23.4 32C22.8 38 17 37.5 17 33" stroke="var(--glyph)" stroke-width="4.2"/></svg></template>
+<template id="m5"><svg viewBox="0 0 48 48" fill="none" stroke-linecap="round"><path d="M4 37C14 37 18 29 27 29S40 21 44 15" stroke="currentColor" stroke-width="5"/><circle cx="24" cy="17" r="9.5" fill="var(--gold)"/><circle cx="20.8" cy="15.6" r="1.7" fill="var(--face)"/><circle cx="27.2" cy="15.6" r="1.7" fill="var(--face)"/><path d="M20.6 20.2q3.4 3 6.8 0" stroke="var(--face)" stroke-width="1.8"/></svg></template>
+<div id="out"></div>
+<script src="logos.js"></script>
+</body></html>

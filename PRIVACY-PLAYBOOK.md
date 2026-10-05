@@ -8,7 +8,8 @@ are kept in practice. Not legal advice; written against PIPEDA's fair informatio
 | Data | Where | Kept until |
 | --- | --- | --- |
 | Visitor ID, display name, progress, quiz scores, notes, streak days | `calclearners.db` on the host | Deleted by the visitor, or 12 months after the browser's last visit (`forget_inactive` in `server.py`) |
-| Forum posts, votes, reports | `calclearners.db` | Deleted by the author or a moderator; unlinked from the visitor after 12 months |
+| Forum posts, likes and dislikes, reports | `calclearners.db` | Deleted by the author or a moderator; unlinked from the visitor after 12 months |
+| CalcBot chat messages | Not stored on the host. The visitor's browser tab keeps them (session storage) | Until the tab is closed |
 | Uploaded PDFs kept for AI lessons, and the lessons | `uploads/` and `calclearners.db` | Same as the visitor who uploaded them |
 | Abuse-limit counters (include IP addresses) | `calclearners.db` | A few days |
 | Feedback | `calclearners.db` | Same as the visitor who sent it |
@@ -16,6 +17,10 @@ are kept in practice. Not legal advice; written against PIPEDA's fair informatio
 
 No names, email addresses or passwords are collected by the site. Copies of the database
 (backups, downloads) count as the data too: do not keep them longer than needed.
+
+When `ANTHROPIC_API_KEY` is set, chat messages and the text of new forum posts are sent to Anthropic
+(`chatbot.py`, `moderation.py`), without the visitor ID or display name. The privacy policy says so in
+sections 1 to 3: keep it in step if what is sent ever changes.
 
 ## Requests about someone's information
 

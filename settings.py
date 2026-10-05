@@ -37,3 +37,7 @@ ADMIN_USERS = {u.strip().lower() for u in setting("ADMIN_USERS").split(",") if u
 # The code Google Search Console gives ("HTML tag" method) to prove the site is yours.
 # Put on the home page when set.
 GOOGLE_SITE_VERIFICATION = setting("GOOGLE_SITE_VERIFICATION")
+# Anthropic API key. Turns on CalcBot's AI answers and the forum's AI check (see ai.py);
+# without it both fall back to built-in rules. Every message costs a little, so set a
+# spend limit in the Anthropic Console.
+ANTHROPIC_API_KEY = setting("ANTHROPIC_API_KEY")

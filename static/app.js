@@ -772,11 +772,11 @@ function formulas() {
 async function forum(_, params) {
   if (!LESSONS.length) return serverMissing();
   const topic = params.get("topic") || "";
-  let sort = "new";
 
   V.innerHTML = `
     <h2>Q&amp;A Forum</h2>
-    <p>Stuck? Ask the community. Rude, off-topic or very short answers are filtered out automatically.
+    <p>Stuck? Ask the community. Math questions, study tips, follow-up questions and a quick thanks are all
+      welcome. Posts are checked automatically so the forum stays kind and about math.
       You can type math like <code>\\( x^2 \\)</code> and it will display nicely.</p>
     <p><small>Posts are public, so please don't share personal details such as full names, contact details or
       your school. Under 13? Ask a parent or guardian before you post. See the
@@ -794,61 +794,74 @@ async function forum(_, params) {
 
     <div class="row filters">
       <select id="ft" aria-label="Filter by topic">${topicOptions(topic, "All topics")}</select>
-      <input id="fs" type="search" placeholder="Search questions">
-      <div class="tabs" role="group" aria-label="Sort">
-        <button data-sort="new" class="on">Newest</button>
-        <button data-sort="top">Top</button>
-        <button data-sort="unanswered">Unanswered</button>
-      </div>
+      <input id="fs" type="search" placeholder="Search questions" aria-label="Search questions">
+      <label class="sort" for="fo">Sort by
+        <select id="fo">
+          <option value="liked">Most liked</option>
+          <option value="new">Newest</option>
+          <option value="old">Oldest</option>
+          <option value="replies">Most replies</option>
+          <option value="unanswered">No replies yet</option>
+        </select>
+      </label>
     </div>
     <div id="qs"><p class="muted">Loading…</p></div>`;
 
   if (topic) $("#nq").focus();
 
-  const load = async () => {
-    const p = new URLSearchParams({ topic: $("#ft").value, q: $("#fs").value, sort });
+  // `show` is the id of a question to scroll to (the one just posted).
+  const load = async show => {
+    const p = new URLSearchParams({ topic: $("#ft").value, q: $("#fs").value, sort: $("#fo").value });
     let qs;
     try { qs = await api("/questions?" + p); }
     catch (e) { $("#qs").innerHTML = `<p class="bad">${esc(e.message)}</p>`; return; }
+    const filtered = $("#ft").value || $("#fs").value || $("#fo").value === "unanswered";
     $("#qs").innerHTML = qs.length ? qs.map(renderQuestion).join("")
-      : `<div class="empty">No questions here yet. Be the first to ask! Someone else is probably wondering the same thing.</div>`;
+      : `<div class="empty">${filtered ? "No questions match. Try a different topic, search or sort."
+        : "No questions here yet. Be the first to ask! Someone else is probably wondering the same thing."}</div>`;
     math($("#qs"));
+    const card = show && $("#q" + show);
+    if (card) {
+      card.classList.add("hl");
+      card.scrollIntoView({ block: "center" });
+    }
   };
 
   $("#ask").onclick = async () => {
     $("#ask-msg").textContent = "";
+    $("#ask").disabled = true;  // the check can take a few seconds
     try {
-      await api("/questions", { method: "POST", body: { title: $("#nq").value, body: $("#nb").value, topic: $("#nt").value } });
+      const r = await api("/questions", { method: "POST", body: { title: $("#nq").value, body: $("#nb").value, topic: $("#nt").value } });
       $("#nq").value = $("#nb").value = "";
       toast("Question posted!");
-      load();
+      load(r.id);
     } catch (e) { $("#ask-msg").textContent = e.message; }
+    $("#ask").disabled = false;
   };
 
-  $("#ft").onchange = load;
-  $("#fs").oninput = debounce(load, 300);
-  V.querySelector(".tabs").onclick = e => {
-    const b = e.target.closest("[data-sort]");
-    if (!b) return;
-    sort = b.dataset.sort;
-    $$(".tabs button").forEach(x => x.classList.toggle("on", x === b));
-    load();
-  };
+  $("#ft").onchange = () => load();
+  $("#fo").onchange = () => load();
+  $("#fs").oninput = debounce(() => load(), 300);
 
   $("#qs").onclick = async e => {
     const t = e.target.closest("button");
     if (!t) return;
     try {
       if (t.dataset.vote) {
-        await api("/vote", { method: "POST", body: { kind: t.dataset.vote, id: +t.dataset.id } });
+        // The counts change in place: re-sorting the list on every like would make it jump around.
+        const r = await api("/vote", { method: "POST", body: { kind: t.dataset.vote, id: +t.dataset.id, value: +t.dataset.value } });
+        const group = t.closest(".votes"), foot = group.parentElement;
+        group.outerHTML = voteButtons(t.dataset.vote, { id: t.dataset.id, ...r });
+        foot.querySelector(`.vote[data-value="${t.dataset.value}"]`).focus();
+        return;
       } else if (t.dataset.del) {
-        if (!confirm("Delete this question and its answers?")) return;
+        if (!confirm("Delete this question and its replies?")) return;
         await api("/questions/" + t.dataset.del, { method: "DELETE" });
         toast("Question deleted");
       } else if (t.dataset.delAnswer) {
-        if (!confirm("Delete this answer?")) return;
+        if (!confirm("Delete this reply?")) return;
         await api("/answers/" + t.dataset.delAnswer, { method: "DELETE" });
-        toast("Answer deleted");
+        toast("Reply deleted");
       } else if (t.dataset.block) {
         if (!confirm("Block this person? Their browser is locked out and everything they posted is deleted.")) return;
         await api("/admin/block", { method: "POST", body: { kind: t.dataset.block, id: +t.dataset.id } });
@@ -858,16 +871,15 @@ async function forum(_, params) {
         await api("/report", { method: "POST", body: { kind: t.dataset.report, id: +t.dataset.id } });
         toast("Reported. Thanks, a moderator will take a look.");
         return;
-      } else if (t.dataset.helpful) {
-        await api(`/answers/${t.dataset.helpful}/helpful`, { method: "POST" });
       } else if (t.dataset.reply) {
         const id = t.dataset.reply;
         const msg = $("#m" + id);
         msg.textContent = "";
+        t.disabled = true;
         try {
           await api(`/questions/${id}/answers`, { method: "POST", body: { body: $("#a" + id).value } });
-          toast("Answer posted. Thanks for helping!");
-        } catch (err) { msg.textContent = err.message; return; }
+          toast("Reply posted");
+        } catch (err) { msg.textContent = err.message; t.disabled = false; return; }
       } else return;
       load();
     } catch (err) { toast(err.message); }
@@ -876,43 +888,51 @@ async function forum(_, params) {
   await load();
 }
 
+const THUMB = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+  stroke-linejoin="round" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>`;
+
+// Like and dislike buttons for a question ("q") or reply ("a"). Pressing your own vote again takes it back.
+function voteButtons(kind, p) {
+  const button = (value, word, count) => `<button class="vote ${value < 0 ? "down" : ""} ${p.my_vote === value ? "on" : ""}"
+    data-vote="${kind}" data-id="${p.id}" data-value="${value}" aria-pressed="${p.my_vote === value}"
+    aria-label="${word} (${count})" ${p.mine ? `disabled title="You can't vote on your own post"` : `title="${word}"`}>${THUMB}<span>${count}</span></button>`;
+  return `<div class="votes" role="group" aria-label="Likes and dislikes">${button(1, "Like", p.likes)}${button(-1, "Dislike", p.dislikes)}</div>`;
+}
+
+// Moderators see the 1-10 score the automatic check gave a post.
+const scoreBadge = p => ME.admin && p.score ? ` · <span class="badge" title="Automatic check: 1 (doesn't belong) to 10 (great)">${p.score}/10</span>` : "";
+
 function renderQuestion(q) {
   const topic = q.topic_id && BY_ID[q.topic_id];
-  return `<div class="card q">
-    <div class="q-head">
-      <button class="vote ${q.voted ? "on" : ""}" data-vote="q" data-id="${q.id}" ${q.mine ? "disabled title=\"Your post\"" : ""}
-        aria-label="Upvote (${q.votes})">▲ ${q.votes}</button>
-      <div>
-        <b class="q-title">${esc(q.title)}</b>
-        <div class="meta">
-          ${topic ? `<a class="chip" href="#/learn/${topic.id}">${esc(topic.name)}</a>` : ""}
-          ${esc(q.author)} · ${timeAgo(q.created)} · ${plural(q.answer_count, "answer")}
-          ${q.mine || ME.admin ? ` · <button class="link" data-del="${q.id}">Delete</button>` : ""}
-          ${ME.admin && !q.mine ? ` · <button class="link" data-block="q" data-id="${q.id}">Block author</button>` : ""}
-          ${q.mine ? "" : ` · <button class="link" data-report="q" data-id="${q.id}">Report</button>`}
-        </div>
+  return `<div class="card q" id="q${q.id}">
+    <b class="q-title">${esc(q.title)}</b>
+    ${q.body ? `<p class="post-text">${esc(q.body)}</p>` : ""}
+    <div class="post-foot">
+      ${voteButtons("q", q)}
+      <div class="meta">
+        ${topic ? `<a class="chip" href="#/learn/${topic.id}">${esc(topic.name)}</a>` : ""}
+        ${esc(q.author)} · ${timeAgo(q.created)} · ${q.answer_count} ${q.answer_count === 1 ? "reply" : "replies"}${scoreBadge(q)}
+        ${q.mine || ME.admin ? ` · <button class="link" data-del="${q.id}">Delete</button>` : ""}
+        ${ME.admin && !q.mine ? ` · <button class="link" data-block="q" data-id="${q.id}">Block author</button>` : ""}
+        ${q.mine ? "" : ` · <button class="link" data-report="q" data-id="${q.id}">Report</button>`}
       </div>
     </div>
-    ${q.body ? `<p class="post-text">${esc(q.body)}</p>` : ""}
-    <div class="answers">${q.answers.map(a => renderAnswer(a, q)).join("")}</div>
+    <div class="answers">${q.answers.map(renderAnswer).join("")}</div>
     <div class="row reply">
-      <textarea id="a${q.id}" rows="1" placeholder="Write an answer: explain a step or show some math"></textarea>
+      <textarea id="a${q.id}" rows="1" placeholder="Write a reply" aria-label="Write a reply"></textarea>
       <button data-reply="${q.id}">Reply</button>
     </div>
     <p class="bad" id="m${q.id}" role="alert"></p>
   </div>`;
 }
 
-function renderAnswer(a, q) {
-  return `<div class="answer ${a.helpful ? "helpful" : ""}">
-    <button class="vote small ${a.voted ? "on" : ""}" data-vote="a" data-id="${a.id}" ${a.mine ? "disabled title=\"Your post\"" : ""}
-      aria-label="Upvote (${a.votes})">▲ ${a.votes}</button>
-    <div>
-      <p class="post-text">${esc(a.body)}</p>
+function renderAnswer(a) {
+  return `<div class="answer">
+    <p class="post-text">${esc(a.body)}</p>
+    <div class="post-foot">
+      ${voteButtons("a", a)}
       <div class="meta">
-        ${a.helpful ? `<span class="badge ok">✓ Marked helpful by the asker</span>` : ""}
-        ${esc(a.author)} · ${timeAgo(a.created)}
-        ${q.mine ? ` · <button class="link" data-helpful="${a.id}">${a.helpful ? "Unmark helpful" : "Mark as helpful"}</button>` : ""}
+        ${esc(a.author)} · ${timeAgo(a.created)}${scoreBadge(a)}
         ${a.mine || ME.admin ? ` · <button class="link" data-del-answer="${a.id}">Delete</button>` : ""}
         ${ME.admin && !a.mine ? ` · <button class="link" data-block="a" data-id="${a.id}">Block author</button>` : ""}
         ${a.mine ? "" : ` · <button class="link" data-report="a" data-id="${a.id}">Report</button>`}
@@ -1432,7 +1452,7 @@ async function admin() {
     <p>This browser can delete any forum post and block its author. Reported posts are listed here; the same
       Delete and Block links also show on every post in the <a href="#/forum">forum</a>.</p>
     <div id="reports">${items.length ? items.map(p => `<div class="card">
-      <small>${plural(p.reports, "report")} · ${p.kind === "q" ? "Question" : "Answer"} by ${esc(p.author)}</small>
+      <small>${plural(p.reports, "report")} · ${p.kind === "q" ? "Question" : "Reply"} by ${esc(p.author)}</small>
       <p><b>${esc(p.title)}</b></p>
       ${p.body ? `<p class="post-text">${esc(p.body)}</p>` : ""}
       <div class="row">

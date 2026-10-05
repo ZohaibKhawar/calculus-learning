@@ -28,6 +28,9 @@ from markupsafe import escape
 from werkzeug.exceptions import HTTPException, TooManyRequests
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+import ai
+import chatbot
+import moderation
 import settings
 import video_ai
 import videos
@@ -104,6 +107,7 @@ CREATE TABLE IF NOT EXISTS questions (
     topic_id TEXT,
     title TEXT NOT NULL,
     body TEXT NOT NULL DEFAULT '',
+    score INTEGER,               -- 1-10 from moderation.py, shown to moderators only
     created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS answers (
@@ -112,13 +116,14 @@ CREATE TABLE IF NOT EXISTS answers (
     user_id TEXT NOT NULL,
     author TEXT NOT NULL,
     body TEXT NOT NULL,
-    helpful INTEGER NOT NULL DEFAULT 0,
+    score INTEGER,
     created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS votes (
     user_id TEXT NOT NULL,
     kind TEXT NOT NULL,          -- 'q' for question, 'a' for answer
     target_id INTEGER NOT NULL,
+    value INTEGER NOT NULL DEFAULT 1,  -- 1 for a like, -1 for a dislike
     PRIMARY KEY (user_id, kind, target_id)
 );
 CREATE TABLE IF NOT EXISTS feedback (
@@ -215,6 +220,22 @@ def init_db():
                              ("last_seen", "TEXT"), ("source", "TEXT")]:
             if column not in have:
                 conn.execute(f"ALTER TABLE users ADD COLUMN {column} {kind}")  # fixed names from this list
+        # Votes used to be upvotes only; now they are likes (1) and dislikes (-1).
+        if "value" not in [r[1] for r in conn.execute("PRAGMA table_info(votes)")]:
+            conn.execute("ALTER TABLE votes ADD COLUMN value INTEGER NOT NULL DEFAULT 1")
+        conn.execute("CREATE INDEX IF NOT EXISTS votes_target ON votes (kind, target_id)")
+        for table in ("questions", "answers"):
+            if "score" not in [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN score INTEGER")  # fixed names from this list
+        # "Marked helpful by the asker" was replaced by likes: each mark becomes the asker's like.
+        if "helpful" in [r[1] for r in conn.execute("PRAGMA table_info(answers)")]:
+            conn.execute("""INSERT OR IGNORE INTO votes (user_id, kind, target_id, value)
+                            SELECT q.user_id, 'a', a.id, 1 FROM answers a JOIN questions q ON q.id = a.question_id
+                            WHERE a.helpful = 1 AND a.user_id != q.user_id""")
+            try:
+                conn.execute("ALTER TABLE answers DROP COLUMN helpful")
+            except sqlite3.OperationalError:  # SQLite before 3.35 can't drop a column
+                conn.execute("UPDATE answers SET helpful = 0")
         # Older versions had sign-in (email codes, usernames, passwords, Google). Forget all of
         # it; the browsers that were signed in under an ADMIN_USERS name stay moderators.
         if "username" in have:
@@ -270,6 +291,15 @@ def limit(rule, who, max_hits, seconds, message="You're doing that too often."):
     if hits > max_hits:
         retry = window + seconds - now
         raise TooManyRequests(f"{message} Try again in {_wait_text(retry)}.", retry_after=retry)
+
+
+def within(rule, who, max_hits, seconds):
+    """Like limit(), but answers False instead of stopping the request."""
+    try:
+        limit(rule, who, max_hits, seconds)
+    except TooManyRequests:
+        return False
+    return True
 
 
 # ---------- Identity ----------
@@ -488,28 +518,18 @@ def json_error(e):
 
 
 # ---------- Moderation ----------
-# Simple rule-based filter. Could be swapped for an AI moderation call later.
+# Display names get a simple word filter. Forum posts are scored in context by moderation.py.
 BAD_WORDS = re.compile(r"\b(butt|stupid|idiot|dumb|shut up|ur mom|fuck|shit)\b", re.I)
-MATHY = re.compile(r"[\d=^+\-*/]|integral|derivative|limit|sum|series|chain|rule|because|then", re.I)
+AI_CHECKS_A_DAY = 1500  # past this many AI checks in a day, the built-in rules score posts
 
 
-def check_post(text, min_len, what):
-    text = text.strip()
-    if len(text) < min_len:
-        abort(400, f"Your {what} is too short. Add a bit more detail (at least {min_len} characters).")
-    if len(text) > 5000:
-        abort(400, f"Your {what} is too long (max 5000 characters).")
-    if BAD_WORDS.search(text):
-        abort(400, "Please keep it kind. Posts with insults or joke content are filtered out.")
-    return text
-
-
-def check_answer(question, answer):
-    answer = check_post(answer, 8, "answer")
-    q_words = re.findall(r"[a-z]{4,}", question.lower())
-    if not MATHY.search(answer) and not any(w in answer.lower() for w in q_words):
-        abort(400, "This doesn't look related to the question. Try explaining a step or showing some math.")
-    return answer
+def score_post(kind, text, question="", topic=""):
+    """Score a forum post from 1 to 10 in context; one that scores too low isn't posted."""
+    use_ai = ai.available() and within("ai-check", "site", AI_CHECKS_A_DAY, 86400)
+    score, problem = moderation.review(kind, text, question, topic, use_ai)
+    if score <= moderation.BLOCK_AT:
+        abort(400, moderation.blocked_message(kind, problem))
+    return score
 
 
 # ---------- Pages ----------
@@ -723,30 +743,44 @@ def put_note(topic):
 
 # ---------- Forum ----------
 # The whole forum query is one fixed string. Sorting and the "unanswered" filter are
-# switched by parameters (? = 'top' ...), so user input only ever travels as data.
+# switched by parameters (:sort = 'liked' ...), so user input only ever travels as data.
+# "Most liked" ranks by likes minus dislikes, then by likes.
 QUESTIONS_SQL = """
     SELECT * FROM (
-        SELECT q.id, q.author, q.topic_id, q.title, q.body, q.created,
+        SELECT q.id, q.author, q.topic_id, q.title, q.body, q.created, q.score,
                q.user_id = :uid AS mine,
-               (SELECT COUNT(*) FROM votes v WHERE v.kind = 'q' AND v.target_id = q.id) AS votes,
-               EXISTS (SELECT 1 FROM votes v WHERE v.kind = 'q' AND v.target_id = q.id AND v.user_id = :uid) AS voted,
+               (SELECT COUNT(*) FROM votes v WHERE v.kind = 'q' AND v.target_id = q.id AND v.value = 1) AS likes,
+               (SELECT COUNT(*) FROM votes v WHERE v.kind = 'q' AND v.target_id = q.id AND v.value = -1) AS dislikes,
+               COALESCE((SELECT v.value FROM votes v
+                         WHERE v.kind = 'q' AND v.target_id = q.id AND v.user_id = :uid), 0) AS my_vote,
                (SELECT COUNT(*) FROM answers a WHERE a.question_id = q.id) AS answer_count
         FROM questions q
         WHERE (:topic = '' OR q.topic_id = :topic)
           AND (:search = '' OR q.title LIKE :like ESCAPE '\\' OR q.body LIKE :like ESCAPE '\\')
     )
     WHERE (:sort != 'unanswered' OR answer_count = 0)
-    ORDER BY CASE WHEN :sort = 'top' THEN votes END DESC, created DESC, id DESC
+    ORDER BY CASE WHEN :sort = 'liked' THEN likes - dislikes END DESC,
+             CASE WHEN :sort = 'liked' THEN likes END DESC,
+             CASE WHEN :sort = 'replies' THEN answer_count END DESC,
+             CASE WHEN :sort = 'old' THEN id END ASC,
+             created DESC, id DESC
     LIMIT 100"""
 
+# Replies: the most liked first, then in the order they were written.
 ANSWERS_SQL = """
-    SELECT a.id, a.question_id, a.author, a.body, a.helpful, a.created,
-           a.user_id = :uid AS mine,
-           (SELECT COUNT(*) FROM votes v WHERE v.kind = 'a' AND v.target_id = a.id) AS votes,
-           EXISTS (SELECT 1 FROM votes v WHERE v.kind = 'a' AND v.target_id = a.id AND v.user_id = :uid) AS voted
-    FROM answers a
-    WHERE a.question_id IN (SELECT value FROM json_each(:ids))
-    ORDER BY a.helpful DESC, votes DESC, a.created"""
+    SELECT * FROM (
+        SELECT a.id, a.question_id, a.author, a.body, a.created, a.score,
+               a.user_id = :uid AS mine,
+               (SELECT COUNT(*) FROM votes v WHERE v.kind = 'a' AND v.target_id = a.id AND v.value = 1) AS likes,
+               (SELECT COUNT(*) FROM votes v WHERE v.kind = 'a' AND v.target_id = a.id AND v.value = -1) AS dislikes,
+               COALESCE((SELECT v.value FROM votes v
+                         WHERE v.kind = 'a' AND v.target_id = a.id AND v.user_id = :uid), 0) AS my_vote
+        FROM answers a
+        WHERE a.question_id IN (SELECT value FROM json_each(:ids))
+    )
+    ORDER BY likes - dislikes DESC, likes DESC, created, id"""
+
+SORTS = ("liked", "new", "old", "replies", "unanswered")
 
 
 @app.get("/api/questions")
@@ -754,9 +788,9 @@ def list_questions():
     uid = current_user()
     topic = request.args.get("topic", "")[:80]
     search = request.args.get("q", "").strip()[:100]
-    sort = request.args.get("sort", "new")
-    if sort not in ("new", "top", "unanswered"):
-        sort = "new"
+    sort = request.args.get("sort", "liked")
+    if sort not in SORTS:
+        sort = "liked"
     # % and _ are LIKE wildcards: escape them so a search for "50%" means just that.
     like = "%" + re.sub(r"([\\%_])", r"\\\1", search) + "%"
     qs = rows(QUESTIONS_SQL, {"uid": uid, "topic": topic, "search": search, "like": like, "sort": sort})
@@ -766,6 +800,9 @@ def list_questions():
         answers.setdefault(a["question_id"], []).append(a)
     for q in qs:
         q["answers"] = answers.get(q["id"], [])
+    if not is_admin(uid):  # the 1-10 score is for moderators only
+        for post in qs + [a for group in answers.values() for a in group]:
+            del post["score"]
     return jsonify(qs)
 
 
@@ -776,15 +813,18 @@ def ask():
     limit("ask", uid, 30, 86400, "You've reached today's question limit.")
     limit("ask-ip", client_ip(), 40, 3600, "Lots of questions are coming from your network.")
     data = body()
-    title = check_post(str(data.get("title", "")), 10, "question")
+    title = str(data.get("title", "")).strip()
     details = str(data.get("body", "")).strip()
-    if details:
-        details = check_post(details, 1, "details")
+    if len(title) < 5:
+        abort(400, "Your question is too short. Write it as a full sentence.")
+    if len(title) > 300 or len(details) > 5000:
+        abort(400, "Your question is too long (max 300 characters, plus 5000 for the details).")
     topic = data.get("topic") or None
     if topic:
         topic_or_400(topic)
-    cur = run("INSERT INTO questions (user_id, author, topic_id, title, body) VALUES (?, ?, ?, ?, ?)",
-              (uid, author_name(uid), topic, title, details))
+    score = score_post("q", f"{title}\n\n{details}".strip(), topic=LESSON_BY_ID[topic]["name"] if topic else "")
+    cur = run("INSERT INTO questions (user_id, author, topic_id, title, body, score) VALUES (?, ?, ?, ?, ?, ?)",
+              (uid, author_name(uid), topic, title, details, score))
     return jsonify(id=cur.lastrowid)
 
 
@@ -805,9 +845,9 @@ def delete_question(qid):
 def delete_answer(aid):
     uid = current_user()
     limit("delete", uid, 30, 3600)
-    a = one("SELECT user_id FROM answers WHERE id = ?", (aid,)) or abort(404, "Answer not found.")
+    a = one("SELECT user_id FROM answers WHERE id = ?", (aid,)) or abort(404, "Reply not found.")
     if a["user_id"] != uid and not is_admin(uid):
-        abort(403, "You can only delete your own answers.")
+        abort(403, "You can only delete your own replies.")
     run("DELETE FROM votes WHERE kind = 'a' AND target_id = ?", (aid,))
     run("DELETE FROM answers WHERE id = ?", (aid,))
     return jsonify(ok=True)
@@ -919,50 +959,78 @@ def dismiss_reports():
 @app.post("/api/questions/<int:qid>/answers")
 def answer(qid):
     uid = current_user()
-    limit("answer", uid, 10, 600, "You've posted a lot of answers.")
-    limit("answer", uid, 100, 86400, "You've reached today's answer limit.")
-    limit("answer-ip", client_ip(), 80, 3600, "Lots of answers are coming from your network.")
+    limit("answer", uid, 10, 600, "You've posted a lot of replies.")
+    limit("answer", uid, 100, 86400, "You've reached today's reply limit.")
+    limit("answer-ip", client_ip(), 80, 3600, "Lots of replies are coming from your network.")
     q = one("SELECT title, body FROM questions WHERE id = ?", (qid,)) or abort(404, "Question not found.")
-    text = check_answer(q["title"] + " " + q["body"], str(body().get("body", "")))
-    run("INSERT INTO answers (question_id, user_id, author, body) VALUES (?, ?, ?, ?)",
-        (qid, uid, author_name(uid), text))
-    return jsonify(ok=True)
-
-
-@app.post("/api/answers/<int:aid>/helpful")
-def helpful(aid):
-    uid = current_user()
-    limit("helpful", uid, 60, 3600)
-    a = one("""SELECT a.helpful, q.user_id AS asker FROM answers a
-               JOIN questions q ON q.id = a.question_id WHERE a.id = ?""", (aid,)) or abort(404, "Answer not found.")
-    if a["asker"] != uid:
-        abort(403, "Only the person who asked can mark an answer as helpful.")
-    run("UPDATE answers SET helpful = ? WHERE id = ?", (0 if a["helpful"] else 1, aid))
+    text = str(body().get("body", "")).strip()
+    if not text:
+        abort(400, "Write your reply first.")
+    if len(text) > 5000:
+        abort(400, "Your reply is too long (max 5000 characters).")
+    score = score_post("a", text, question=f"{q['title']}\n\n{q['body']}".strip())
+    run("INSERT INTO answers (question_id, user_id, author, body, score) VALUES (?, ?, ?, ?, ?)",
+        (qid, uid, author_name(uid), text, score))
     return jsonify(ok=True)
 
 
 @app.post("/api/vote")
 def vote():
+    """Like (value 1) or dislike (value -1) a question or reply. The same vote again takes it back."""
     uid = current_user()
     limit("vote", uid, 30, 60, "You're voting very fast.")
     limit("vote", uid, 300, 86400, "You've reached today's voting limit.")
     data = body()
-    kind = data.get("kind")
+    kind, value = data.get("kind"), data.get("value", 1)
     try:
         target = int(data.get("id"))
     except (TypeError, ValueError):
         abort(400, "Unknown post.")
+    if type(value) is not int or value not in (1, -1):
+        abort(400, "Unknown vote.")
     owner_sql = {"q": "SELECT user_id FROM questions WHERE id = ?",
                  "a": "SELECT user_id FROM answers WHERE id = ?"}.get(kind) or abort(400, "Unknown vote type.")
     post = one(owner_sql, (target,)) or abort(404, "Post not found.")
     if post["user_id"] == uid:
-        abort(400, "You can't upvote your own post.")
+        abort(400, "You can't vote on your own post.")
     key = (uid, kind, target)
-    if one("SELECT 1 FROM votes WHERE user_id = ? AND kind = ? AND target_id = ?", key):
+    mine = one("SELECT value FROM votes WHERE user_id = ? AND kind = ? AND target_id = ?", key)
+    if mine and mine["value"] == value:
         run("DELETE FROM votes WHERE user_id = ? AND kind = ? AND target_id = ?", key)
+        value = 0
     else:
-        run("INSERT INTO votes (user_id, kind, target_id) VALUES (?, ?, ?)", key)
-    return jsonify(ok=True)
+        run("""INSERT INTO votes (user_id, kind, target_id, value) VALUES (?, ?, ?, ?)
+               ON CONFLICT (user_id, kind, target_id) DO UPDATE SET value = excluded.value""", key + (value,))
+    counts = one("""SELECT COALESCE(SUM(value = 1), 0) AS likes, COALESCE(SUM(value = -1), 0) AS dislikes
+                    FROM votes WHERE kind = ? AND target_id = ?""", (kind, target))
+    return jsonify(likes=counts["likes"], dislikes=counts["dislikes"], my_vote=value)
+
+
+# ---------- CalcBot (study helper chat) ----------
+# AI answers cost a little each, so they are capped per person and for the whole site.
+# Past a cap CalcBot still answers, from the lessons (see chatbot.py).
+CHAT_AI_PER_PERSON = 40   # a day
+CHAT_AI_SITE = 500        # a day
+
+
+@app.post("/api/chat")
+def chat():
+    uid = current_user()
+    limit("chat", uid, 10, 60, "You're sending messages very fast.")
+    limit("chat-ip", client_ip(), 600, 3600, "Lots of chat messages are coming from your network.")
+    data = body()
+    try:
+        history = chatbot.clean_history(data.get("messages"))
+    except ValueError as e:
+        abort(400, str(e))
+    if not history:
+        abort(400, "Type a message first.")
+    lesson = LESSON_BY_ID.get(str(data.get("lesson") or ""))
+    use_ai = (ai.available() and within("chat-ai", uid, CHAT_AI_PER_PERSON, 86400)
+              and within("chat-ai-ip", client_ip(), 200, 86400)
+              and within("chat-ai", "site", CHAT_AI_SITE, 86400))
+    text, mode = chatbot.reply(history, lesson, str(data.get("page") or ""), use_ai)
+    return jsonify(reply=text, mode=mode)
 
 
 # ---------- Feedback ----------

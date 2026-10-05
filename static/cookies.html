@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#F4F6F9">
   <title>Cookie Policy - CalcLearners</title>
   <script src="theme.js"></script>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E%3Crect width='26' height='26' rx='6' fill='%2315233B'/%3E%3Cpath d='M4 19 C 8 19, 9 7, 13.5 7 S 19 14, 22 12' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/%3E%3Cpath d='M8.5 4.5 L 19 10' stroke='%23F0B429' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect x='2' y='2' width='44' height='44' rx='12' fill='%2315233B'/%3E%3Cpath d='M31 15C31 10.5 25.2 10 24.6 16L23.4 32C22.8 38 17 37.5 17 33' fill='none' stroke='%23F0B429' stroke-width='4.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap">
@@ -19,9 +19,9 @@
   <header class="top">
     <div class="top-bar">
       <a class="logo" href="./" aria-label="CalcLearners home">
-        <svg viewBox="0 0 26 26" aria-hidden="true">
-          <path class="logo-curve" d="M3 20 C 8 20, 9 6, 14 6 S 20 14, 23 12"/>
-          <path class="logo-tangent" d="M8 3 L 20 9"/>
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <rect class="logo-badge" x="4" y="4" width="40" height="40" rx="11"/>
+          <path class="logo-glyph" d="M31 15C31 10.5 25.2 10 24.6 16L23.4 32C22.8 38 17 37.5 17 33"/>
         </svg>
         <span>CalcLearners</span>
       </a>
@@ -41,7 +41,8 @@
 
     <h2>1. What we store</h2>
     <p>A cookie is a small piece of text a website asks your browser to keep and send back on later visits.
-      Local storage is similar, but it stays in your browser and is not sent to our server.</p>
+      Local storage is similar, but it stays in your browser and is not sent to our server. Session storage
+      is the same again, except that it is cleared when you close the tab.</p>
     <div class="legal-table">
       <table>
         <thead>
@@ -75,6 +76,12 @@
             <td>Until you clear your browser's site data.</td>
           </tr>
           <tr>
+            <td><code>chat</code></td>
+            <td>Session storage</td>
+            <td>Keeps your conversation with CalcBot, the study helper, while you move between pages.</td>
+            <td>Until you close the tab or start a new chat.</td>
+          </tr>
+          <tr>
             <td><code>uid</code></td>
             <td>Local storage</td>
             <td>Left over from the first version of the site, which kept the visitor ID here. It is cleared the
@@ -91,8 +98,9 @@
       files.</p>
 
     <h2>3. Why there is no cookie banner</h2>
-    <p>Everything in the table above is either needed for the site to work or is a preference you set
-      yourself. We don't use cookies that need a separate opt-in, such as advertising or analytics cookies. If
+    <p>Everything in the table above is either needed for the site to work or is there because of something
+      you did yourself: a preference you set, or a chat you started. We don't use cookies that need a separate
+      opt-in, such as advertising or analytics cookies. If
       that ever changes, we will update this page and ask you first.</p>
 
     <h2>4. Your choices</h2>
