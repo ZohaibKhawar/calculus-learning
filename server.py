@@ -630,6 +630,7 @@ def me():
             "SELECT topic_id FROM notes WHERE user_id = ? AND body != '' AND topic_id NOT LIKE 'video:%'", (uid,))
                if r["topic_id"] in LESSON_IDS],
         streak=streak(uid),
+        chat_pictures=ai.available(),  # only CalcBot's AI can look at a picture
     )
 
 
@@ -1011,6 +1012,10 @@ def vote():
 # Past a cap CalcBot still answers, from the lessons (see chatbot.py).
 CHAT_AI_PER_PERSON = 40   # a day
 CHAT_AI_SITE = 500        # a day
+# A picture costs more to read than a typed message, so pictures have smaller caps of
+# their own. Past one, CalcBot asks for the problem to be typed instead.
+CHAT_PICTURES_PER_PERSON = 10   # a day
+CHAT_PICTURES_SITE = 100        # a day
 
 
 @app.post("/api/chat")
@@ -1021,6 +1026,7 @@ def chat():
     data = body()
     try:
         history = chatbot.clean_history(data.get("messages"))
+        picture = chatbot.clean_picture(data.get("image"))
     except ValueError as e:
         abort(400, str(e))
     if not history:
@@ -1029,8 +1035,11 @@ def chat():
     use_ai = (ai.available() and within("chat-ai", uid, CHAT_AI_PER_PERSON, 86400)
               and within("chat-ai-ip", client_ip(), 200, 86400)
               and within("chat-ai", "site", CHAT_AI_SITE, 86400))
-    text, mode = chatbot.reply(history, lesson, str(data.get("page") or ""), use_ai)
-    return jsonify(reply=text, mode=mode)
+    if picture:
+        use_ai = (use_ai and within("chat-pic", uid, CHAT_PICTURES_PER_PERSON, 86400)
+                  and within("chat-pic", "site", CHAT_PICTURES_SITE, 86400))
+    text, mode, kept = chatbot.reply(history, lesson, str(data.get("page") or ""), use_ai, picture)
+    return jsonify(reply=text, mode=mode, picture=kept)
 
 
 # ---------- Feedback ----------

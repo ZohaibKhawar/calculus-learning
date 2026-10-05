@@ -17,6 +17,8 @@ plain HTML/CSS/JavaScript frontend.
   check that scores every post from 1 to 10 in context, so thanks and study tips get through but spam and
   insults don't (`moderation.py`).
 - **CalcBot**, a study helper chat on every page that answers math, study and site questions (`chatbot.py`).
+  With the AI on it also takes a picture of a problem, your notes or the site, and turns away pictures of
+  anything else.
 - **A page per lesson for search engines** at `/lessons/<id>`, listed in `/sitemap.xml`
   (the app itself lives at one address, which search engines see as a single page).
 
@@ -37,7 +39,7 @@ and `uploads/` (both git-ignored).
 Without a key the site still works: CalcBot answers from the lessons, and the forum check uses built-in rules.
 
 - Put `ANTHROPIC_API_KEY=...` in `secrets.env` (see `secrets.env.example`) and CalcBot's answers and the
-  forum check are done by Claude. Each chat message or post costs a little; the daily caps are at the top of
-  the chat and moderation sections in `server.py`.
+  forum check are done by Claude, and CalcBot can look at pictures. Each chat message, picture or post costs
+  a little; the daily caps are at the top of the chat and moderation sections in `server.py`.
 - Set `ANTHROPIC_API_KEY` as an environment variable before starting the server to also turn newly uploaded
   PDFs into video lessons with Claude.

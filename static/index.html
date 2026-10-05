@@ -220,6 +220,19 @@
     <div class="chat-log" id="chat-log" role="log" aria-live="polite" tabindex="0" aria-label="Conversation"></div>
     <div class="chat-chips" id="chat-chips" hidden></div>
     <form class="chat-form" id="chat-form">
+      <div class="chat-pic" id="chat-pic" hidden>
+        <img id="chat-pic-img" alt="The picture you are about to send">
+        <span>Picture attached</span>
+        <button class="icon-btn" id="chat-pic-remove" type="button" aria-label="Remove the picture" title="Remove the picture">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <!-- Shown only when CalcBot's AI is on: nothing else can look at a picture -->
+      <input id="chat-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+      <button class="chat-attach" id="chat-attach" type="button" aria-label="Attach a picture"
+              title="Attach a picture of a math problem, your notes or this site" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M21 15.5l-4.6-4.6a1.5 1.5 0 0 0-2.1 0L6 19.2"/></svg>
+      </button>
       <label class="sr-only" for="chat-input">Message CalcBot</label>
       <textarea id="chat-input" rows="1" maxlength="1500" enterkeyhint="send" placeholder="Ask about math or the site"></textarea>
       <button type="submit" aria-label="Send message">

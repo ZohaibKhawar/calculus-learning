@@ -1,6 +1,9 @@
 /* CalcBot: the study helper chat in the corner of every page.
  *
  * The conversation lives in this tab only (session storage); the server keeps none of it.
+ * A message can carry one picture, when CalcBot's AI is on. A picture is shrunk here before
+ * it is sent, is never stored, and stays in the chat only if CalcBot finds it is about math,
+ * studying or this site.
  * Replies use the same safe markup as the reading lessons (see reader.js), plus
  * [text](#/page) links to pages of this site.
  */
@@ -8,10 +11,13 @@
   "use strict";
   const panel = $("#chat"), log = $("#chat-log"), chips = $("#chat-chips");
   const input = $("#chat-input"), fab = $("#chat-open");
+  const file = $("#chat-file"), attach = $("#chat-attach"), tray = $("#chat-pic");
   const KEEP = 40;   // messages remembered in this tab
   const SEND = 16;   // how many of them go along with a new message, for context
+  const SIDE = 1568; // the longest side of a picture once shrunk, in pixels
   const phone = matchMedia("(max-width: 640px)");
-  let turns = [];    // [{ role: "user" | "assistant", content }]
+  let turns = [];    // [{ role: "user" | "assistant", content, pic: true if a picture went with it }]
+  let picture = "";  // the picture waiting to be sent, as a data: URL
   let busy = false;
 
   try { turns = JSON.parse(sessionStorage.getItem("chat")) || []; } catch (e) { /* blocked or empty */ }
@@ -32,10 +38,25 @@
     log.scrollTop = log.scrollHeight;
     return el;
   }
-  const show = t => add(t.role, t.role === "user" ? esc(t.content) : render(t.content));
+  // A picture is shown only while this page still has it: a chat restored later notes where it was.
+  function show(t, pic) {
+    if (t.role !== "user") return add(t.role, render(t.content));
+    const el = add("user", (t.pic ? `<span class="chat-pic-tag">Picture</span>` : "") + esc(t.content));
+    if (pic) {
+      const img = new Image();
+      img.alt = "The picture you sent";
+      img.src = pic;
+      el.firstChild.replaceWith(img);
+    }
+    return el;
+  }
+
+  // Only CalcBot's AI can look at a picture, and the server says whether that is on.
+  const canSee = () => !!ME.chat_pictures;
 
   function welcome() {
-    add("assistant", render("Hi! I'm **CalcBot**. Ask me a math question, how to study for a test, or how this site works."));
+    add("assistant", render("Hi! I'm **CalcBot**. Ask me a math question, how to study for a test, or how this site works."
+      + (canSee() ? " You can also send a picture of a problem, your notes or this site." : "")));
     const lesson = BY_ID[currentTopicId()];
     const ideas = [lesson ? `Explain ${lesson.name} simply` : "What is the chain rule?",
       "How do I prepare for a calculus test?", "How does this site work?"];
@@ -49,25 +70,80 @@
     input.style.height = Math.min(input.scrollHeight + 2, 120) + "px";
   }
 
+  // Shrink a picture and re-save it as a JPEG. That keeps the upload small, and leaves behind
+  // what a photo file carries with it, such as where it was taken.
+  function shrink(f) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader(), img = new Image();
+      reader.onerror = img.onerror = reject;
+      reader.onload = () => { img.src = reader.result; };
+      img.onload = () => {
+        const k = Math.min(1, SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement("canvas");
+        c.width = Math.max(1, Math.round(img.naturalWidth * k));
+        c.height = Math.max(1, Math.round(img.naturalHeight * k));
+        const g = c.getContext("2d");
+        g.fillStyle = "#fff";  // JPEG has no see-through, which would come out black
+        g.fillRect(0, 0, c.width, c.height);
+        g.drawImage(img, 0, 0, c.width, c.height);
+        resolve(c.toDataURL("image/jpeg", 0.85));
+      };
+      reader.readAsDataURL(f);
+    });
+  }
+
+  function setPicture(url) {
+    picture = url;
+    tray.hidden = !url;
+    if (url) $("#chat-pic-img").src = url; else $("#chat-pic-img").removeAttribute("src");
+  }
+
+  async function attachPicture(f) {
+    if (!f || busy) return;
+    if (!f.type.startsWith("image/")) return toast("That file isn't a picture.");
+    if (f.size > 25e6) return toast("That picture is too big. Try a smaller one or a screenshot.");
+    try { setPicture(await shrink(f)); }
+    catch (e) { toast("That picture couldn't be opened. Try a screenshot or a photo."); }
+    input.focus();
+  }
+
+  // The picture didn't stay in the chat: it couldn't be sent or read, or it wasn't about math.
+  function dropPicture(turn, el) {
+    delete turn.pic;
+    const tag = document.createElement("span");
+    tag.className = "chat-pic-tag";
+    tag.textContent = "Picture removed";
+    el.querySelector("img").replaceWith(tag);
+  }
+
   async function send(text) {
     text = text.trim();
-    if (!text || busy) return;
+    const pic = picture;
+    if ((!text && !pic) || busy) return;
     busy = true;
     chips.hidden = true;
-    turns.push({ role: "user", content: text });
-    show(turns[turns.length - 1]);
+    const turn = { role: "user", content: text || "Can you help me with this?" };
+    if (pic) turn.pic = true;
+    turns.push(turn);
+    const mine = show(turn, pic);
+    setPicture("");
     input.value = "";
     grow();
     const reply = add("assistant", `<span class="typing" role="img" aria-label="CalcBot is thinking"><i></i><i></i><i></i></span>`);
+    // Only the newest picture is sent, so earlier ones are pointed out in words.
+    const messages = turns.slice(-SEND).map(t => ({ role: t.role, content: t.pic && t !== turn
+      ? "[I sent a picture with this message. You can't see it any more.]\n" + t.content : t.content }));
     try {
       const r = await api("/chat", { method: "POST", body: {
-        messages: turns.slice(-SEND), lesson: currentTopicId() || "", page: parseHash().view || "home" } });
+        messages, image: pic || undefined, lesson: currentTopicId() || "", page: parseHash().view || "home" } });
       turns.push({ role: "assistant", content: r.reply });
       reply.innerHTML = render(r.reply);
+      if (pic && !r.picture) dropPicture(turn, mine);
     } catch (e) {
       // The message stays in the chat, so the next one sent carries it along.
       reply.classList.add("err");
       reply.textContent = e.message;
+      if (pic) dropPicture(turn, mine);
     }
     save();
     busy = false;
@@ -86,8 +162,9 @@
     panel.hidden = false;
     fab.setAttribute("aria-expanded", "true");
     document.body.classList.add("chat-open");
+    attach.hidden = !canSee();
     if (!log.children.length) {
-      if (turns.length) turns.forEach(show); else welcome();
+      if (turns.length) turns.forEach(t => show(t)); else welcome();
     }
     fit();
     log.scrollTop = log.scrollHeight;
@@ -107,9 +184,18 @@
     if (busy) return;
     turns = [];
     save();
+    setPicture("");
     log.innerHTML = "";
     welcome();
     input.focus();
+  });
+  attach.addEventListener("click", () => file.click());
+  file.addEventListener("change", () => { attachPicture(file.files[0]); file.value = ""; });
+  $("#chat-pic-remove").addEventListener("click", () => { setPicture(""); input.focus(); });
+  // A screenshot is usually pasted, not saved to a file first.
+  input.addEventListener("paste", e => {
+    const f = canSee() && [...(e.clipboardData?.files || [])].find(x => x.type.startsWith("image/"));
+    if (f) { e.preventDefault(); attachPicture(f); }
   });
   $("#chat-form").addEventListener("submit", e => { e.preventDefault(); send(input.value); });
   input.addEventListener("input", grow);

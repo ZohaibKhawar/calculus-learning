@@ -1339,10 +1339,20 @@ body.chat-open .chat-fab { display: none; }
 @media (hover: hover) { .chat-chips button:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); } }
 @media (pointer: coarse) { .chat-chips button { min-height: 42px; } }
 
-.chat-form { display: flex; align-items: flex-end; gap: 8px; padding: 10px 12px 6px; border-top: 1px solid var(--rule); }
-.chat-form textarea { flex: 1; min-height: 46px; max-height: 120px; margin: 0; border-radius: 14px; resize: none; }
-.chat-form button { flex: none; width: 46px; min-height: 46px; margin: 0; padding: 0; border-radius: 14px; }
-.chat-form button svg { width: 20px; height: 20px; }
+.chat-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; padding: 10px 12px 6px; border-top: 1px solid var(--rule); }
+.chat-form textarea { flex: 1; min-width: 0; min-height: 46px; max-height: 120px; margin: 0; border-radius: 14px; resize: none; }
+.chat-form > button { flex: none; width: 46px; min-height: 46px; margin: 0; padding: 0; border-radius: 14px; }
+.chat-form > button svg { width: 20px; height: 20px; }
+.chat-form .chat-attach { border-color: var(--rule-strong); background: transparent; color: var(--ink); }
+@media (hover: hover) { .chat-form .chat-attach:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); } }
+/* The picture waiting to be sent, on its own row above the message box */
+.chat-pic { flex: 0 0 100%; display: flex; align-items: center; gap: 10px; }
+.chat-pic img { flex: none; width: 52px; height: 52px; border: 1px solid var(--rule-strong); border-radius: 10px; object-fit: cover; }
+.chat-pic span { flex: 1; color: var(--graphite); font-size: 14px; }
+.chat-pic .icon-btn { border-color: transparent; }
+/* A picture in the conversation, or the note left where one was */
+.chat-msg img { display: block; max-width: 100%; max-height: 220px; margin-bottom: 6px; border-radius: 10px; }
+.chat-pic-tag { display: block; width: fit-content; margin-bottom: 4px; padding: 1px 9px; border: 1px solid; border-radius: 999px; font-size: 12.5px; line-height: 1.5; opacity: 0.8; }
 .chat-note { margin: 0; padding: 0 14px 10px; color: var(--graphite); font-size: 12.5px; line-height: 1.4; }
 
 /* ==========================================================
