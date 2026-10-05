@@ -212,6 +212,11 @@
   <section class="chat no-print" id="chat" role="dialog" aria-label="CalcBot, the study helper" hidden>
     <header class="chat-head">
       <div class="who"><b>CalcBot</b><small>Study helper</small></div>
+      <!-- Side panel or small window. chat.js sets its label; phones hide it, as the chat fills the screen there -->
+      <button class="icon-btn" id="chat-size" type="button">
+        <svg class="ico-smaller" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 4l-6 6M14 5v5h5M4 20l6-6M10 19v-5H5"/></svg>
+        <svg class="ico-bigger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 10l6-6M15 4h5v5M10 14l-6 6M4 15v5h5"/></svg>
+      </button>
       <button class="icon-btn" id="chat-new" type="button" aria-label="Start a new chat" title="Start a new chat">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
       </button>

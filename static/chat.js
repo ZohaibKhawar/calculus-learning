@@ -1,4 +1,5 @@
-/* CalcBot: the study helper chat in the corner of every page.
+/* CalcBot: the study helper chat on every page. It opens as a panel down the side of the
+ * screen, or as a small window in the corner for anyone who prefers that.
  *
  * The conversation lives in this tab only (session storage); the server keeps none of it.
  * A message can carry one picture, when CalcBot's AI is on. A picture is shrunk here before
@@ -12,6 +13,7 @@
   const panel = $("#chat"), log = $("#chat-log"), chips = $("#chat-chips");
   const input = $("#chat-input"), fab = $("#chat-open");
   const file = $("#chat-file"), attach = $("#chat-attach"), tray = $("#chat-pic");
+  const sizeBtn = $("#chat-size");
   const KEEP = 40;   // messages remembered in this tab
   const SEND = 16;   // how many of them go along with a new message, for context
   const SIDE = 1568; // the longest side of a picture once shrunk, in pixels
@@ -25,6 +27,15 @@
   const save = () => {
     try { sessionStorage.setItem("chat", JSON.stringify(turns.slice(-KEEP))); } catch (e) { /* private window */ }
   };
+
+  // The side panel, unless the small window was picked last time.
+  function setSize(big) {
+    document.body.classList.toggle("chat-big", big);
+    const label = big ? "Make the chat smaller" : "Make the chat bigger";
+    sizeBtn.setAttribute("aria-label", label);
+    sizeBtn.title = label;
+  }
+  setSize(store("chat-size") !== "small");
 
   // Reader.render escapes everything; links are added afterwards and may only point inside the site.
   const LINK = /\[([^\]<]+)\]\((#\/[\w\-/?=&.%]*)\)/g;
@@ -187,6 +198,12 @@
 
   fab.addEventListener("click", open);
   $("#chat-close").addEventListener("click", () => close(true));
+  sizeBtn.addEventListener("click", () => {
+    const big = !document.body.classList.contains("chat-big");
+    setSize(big);
+    store("chat-size", big ? "big" : "small");
+    log.scrollTop = log.scrollHeight;
+  });
   $("#chat-new").addEventListener("click", () => {
     if (busy) return;
     turns = [];

@@ -1332,6 +1332,38 @@ body.chat-open .chat-fab { display: none; }
   box-shadow: 0 18px 48px rgba(12, 20, 38, 0.28);
   overflow: hidden;
 }
+/* The bigger chat (the size button in its header): a panel down the right side, a third of
+   the screen wide. Phones don't need it: there the chat fills the screen either way. */
+:root { --chat-w: clamp(380px, 33.333vw, 640px); }
+body.chat-big .ico-bigger, body:not(.chat-big) .ico-smaller { display: none; }
+@media (min-width: 641px) {
+  body.chat-big .chat {
+    top: calc(var(--hdr-total) + 1px);  /* under the header and its rule */
+    right: 0;
+    bottom: 0;
+    width: var(--chat-w);
+    height: auto;
+    padding: 0 env(safe-area-inset-right, 0px) var(--safe-b) 0;
+    border-width: 0 0 0 1px;
+    border-radius: 0;
+    box-shadow: -14px 0 40px rgba(12, 20, 38, 0.18);
+  }
+}
+/* Wide screens move the page over, so the lesson stays readable next to the chat... */
+@media (min-width: 1280px) {
+  body.chat-big.chat-open :is(#landing, #app, #banner, .site-foot) { margin-right: var(--chat-w); }
+  body.chat-big.chat-open #app { width: auto; }
+  body.chat-big .chat { box-shadow: none; }
+}
+/* ...which leaves the page as narrow as on a tablet, until the screen is wider still. */
+@media (min-width: 1280px) and (max-width: 1480px) {
+  body.chat-big.chat-open .hero { grid-template-columns: 1fr; gap: 32px; padding-top: 40px; }
+  body.chat-big.chat-open .lede { max-width: 52ch; }
+  body.chat-big.chat-open .tool-list { grid-template-columns: 1fr; }
+  body.chat-big.chat-open :is(.tool, .tool + .tool) { padding: 22px 0 10px; border-left: 0; }
+  body.chat-big.chat-open .tool + .tool { border-top: 1px solid var(--rule); }
+  body.chat-big.chat-open main { padding: 28px 28px 56px; }
+}
 .chat-head { display: flex; align-items: center; gap: 4px; padding: 10px 10px 10px 16px; border-bottom: 1px solid var(--rule); }
 .chat-head .who { margin-right: auto; }
 .chat-head b { display: block; font: 800 19px/1.15 var(--display); letter-spacing: -0.01em; }
@@ -1538,6 +1570,7 @@ body.chat-open .chat-fab { display: none; }
   .chat-fab { width: 56px; min-height: 56px; padding: 0; }
   .chat-fab span { display: none; }
   .chat { top: 0; right: 0; bottom: auto; left: 0; width: auto; height: 100vh; height: 100dvh; padding-top: var(--safe-t); border: 0; border-radius: 0; }
+  #chat-size { display: none; }
   .chat-note { padding-bottom: calc(10px + var(--safe-b)); }
   body.chat-open { overflow: hidden; }
   .reader { font-size: 17px; }

@@ -22,8 +22,9 @@ plain HTML/CSS/JavaScript frontend.
   check that scores every post from 1 to 10 in context, so thanks and study tips get through but spam and
   insults don't (`moderation.py`).
 - **CalcBot**, a study helper chat on every page that answers math, study and site questions (`chatbot.py`).
-  With the AI on it also takes a picture of a problem, your notes or the site, and turns away pictures of
-  anything else.
+  It opens as a panel down the side of the screen, a third of its width, or as a small window in the corner.
+  With the AI on it also takes a picture of a problem, your notes or the site, types out the question it
+  reads there before answering, and turns away pictures of anything else.
 - **A page per lesson for search engines** at `/lessons/<id>`, listed in `/sitemap.xml`
   (the app itself lives at one address, which search engines see as a single page).
 
