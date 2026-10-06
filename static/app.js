@@ -236,9 +236,24 @@ document.addEventListener("click", e => {
   if (nav.classList.contains("open") && !e.target.closest("#nav, #menu-btn")) setMenu(false);
 });
 
+// Wide screens: a button folds the topics list down to a narrow strip, and the choice is remembered.
+const sideToggle = $("#side-toggle");
+const sideOpen = () => document.documentElement.dataset.side !== "closed";
+function setSide(open) {
+  document.documentElement.dataset.side = open ? "open" : "closed";
+  sideToggle.setAttribute("aria-expanded", open);
+  sideToggle.setAttribute("aria-label", open ? "Hide topics" : "Show topics");
+  sideToggle.title = open ? "Hide topics" : "Show topics";
+}
+setSide(sideOpen());
+sideToggle.addEventListener("click", () => {
+  setSide(!sideOpen());
+  store("topics", sideOpen() ? "open" : "closed");
+});
+
 const topicsBtn = $("#topics-btn");
 function openTopics(focusSearch) {
-  if (!isPhone()) { $("#q").focus(); return; }
+  if (!isPhone()) { setSide(true); $("#q").focus(); return; }
   document.body.classList.add("topics-open");
   $("#scrim").hidden = false;
   topicsBtn.setAttribute("aria-expanded", "true");

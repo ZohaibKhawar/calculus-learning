@@ -655,6 +655,13 @@ aside {
 }
 .aside-head input { margin: 0; }
 .topics-close { display: none; flex: none; }
+.side-toggle { flex: none; width: 40px; height: 40px; min-height: 40px; border-color: transparent; color: var(--graphite); }
+
+/* Wide screens: the topics list folds down to a narrow strip that keeps only its button */
+@media (min-width: 861px) {
+  [data-side="closed"] #topics { width: 69px; overflow: hidden; }
+  [data-side="closed"] #topics :is(.aside-head input, #side) { display: none; }
+}
 
 #side h4 {
   display: flex;
@@ -1529,6 +1536,7 @@ body.chat-big .ico-bigger, body:not(.chat-big) .ico-smaller { display: none; }
   body.topics-open { overflow: hidden; }
   .scrim { display: block; position: fixed; inset: 0; z-index: 44; background: var(--scrim); }
   .topics-close { display: inline-grid; }
+  .side-toggle { display: none; }
   .topics-btn {
     display: inline-flex;
     margin: 0 0 16px;
