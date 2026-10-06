@@ -37,6 +37,7 @@ import settings
 import video_ai
 import videos
 from lessons import LESSON_IDS, LESSONS
+from practice import PRACTICE
 from search_terms import SEARCH
 
 BASE = Path(__file__).parent
@@ -655,6 +656,11 @@ def robots():
 @app.get("/api/lessons")
 def lessons():
     return jsonify(LESSONS)
+
+
+@app.get("/api/practice")
+def practice():
+    return jsonify(PRACTICE)
 
 
 # ---------- Accounts ----------

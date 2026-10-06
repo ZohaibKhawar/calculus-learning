@@ -26,3 +26,11 @@ def pr(q, hint, a):
 
 def mc(q, choices, answer, why):
     return {"q": q, "choices": choices, "answer": answer, "why": why}
+
+
+def pset(title, lesson, questions):
+    return {"title": title, "lesson": lesson, "questions": questions}
+
+
+def pq(q, steps, a):
+    return {"q": q, "steps": steps, "a": a}

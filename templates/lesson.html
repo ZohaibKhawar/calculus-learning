@@ -59,6 +59,9 @@
         <details><summary>Answer</summary><div class="box ans">{{ p.a|safe }}</div></details>
       </div>
       {% endfor %}
+      {% if lesson.unit != "Extra" %}
+      <p class="more-practice"><a href="/#/practice/{{ lesson.week }}">More {{ lesson.unit }} practice, with worked solutions</a></p>
+      {% endif %}
     </section>
 
     <section class="card hl">

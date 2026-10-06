@@ -45,7 +45,8 @@ SITE = [
      "questions and replies to the top, and you can sort by most liked, newest, oldest or most replies."),
     (r"\b(quiz|quizzes|practice|hints?)\b",
      "Every lesson ends with practice problems (with hints) and a short quiz. Open any lesson from the "
-     "[course page](#/learn)."),
+     "[course page](#/learn). For more, the [Practice page](#/practice) has extra questions for every week "
+     "of the course, each with a worked solution."),
     (r"\b(uploads?|pdf|my notes|own notes)\b",
      "On [Turn notes into videos](#/upload) you can upload your own notes (PDF, Word or text). The site finds "
      "the lessons they match and builds a study plan around them."),
@@ -78,7 +79,8 @@ Short sessions on several days beat one long one. [My progress](#/dashboard) sho
 HELLO = ("I'm CalcBot. Name a topic you're stuck on, like the chain rule or limits, and I'll point you to the "
          "right lesson. You can also ask how to study or how the site works.")
 
-PAGES = {"home": "the home page", "learn": "the course page", "videos": "the video lessons page",
+PAGES = {"home": "the home page", "learn": "the course page", "practice": "the Practice page",
+         "videos": "the video lessons page",
          "watch": "a video lesson", "formulas": "the formula sheet", "forum": "the Q&A forum",
          "dashboard": "the My progress page", "upload": "the Turn notes into videos page",
          "feedback": "the feedback page"}

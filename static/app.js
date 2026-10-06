@@ -307,7 +307,7 @@ async function route() {
     return;
   }
   renderSidebar();
-  const views = { learn, dashboard, formulas, forum, upload, feedback, videos: videosView, watch, admin, account };
+  const views = { learn, practice: practicePage, dashboard, formulas, forum, upload, feedback, videos: videosView, watch, admin, account };
   await (views[view] || learn)(arg, params);
   math(V);
   // A quick fade shows the page changed (skipped when motion is turned off).
@@ -422,6 +422,7 @@ async function learn(id) {
           <div class="box hint" hidden>${p.hint}</div>
           <div class="box ans" hidden>${p.a}</div>
         </div>`).join("")}
+      ${l.unit === "Extra" ? "" : `<p class="more-practice"><a href="#/practice/${l.week}">More ${esc(l.unit)} practice, with worked solutions</a></p>`}
     </section>
 
     <section id="s-quiz" class="card">
@@ -1161,6 +1162,67 @@ function formulas() {
   $("#fq").oninput = debounce(draw, 200);
   $("#print").onclick = () => window.print();
   draw();
+}
+
+// ---------- Practice (#/practice/<week>): extra questions for each week, with worked solutions ----------
+let PRACTICE = null;
+
+async function practicePage(arg) {
+  if (!LESSONS.length) return serverMissing();
+  if (!PRACTICE) {
+    try { PRACTICE = await api("/practice"); }
+    catch (e) { V.innerHTML = `<h2>Practice</h2><p class="bad">${esc(e.message)}</p>`; return; }
+  }
+  // No week in the address: open the week of the lesson the learner looked at last.
+  const set = PRACTICE.find(p => p.week === +arg) || PRACTICE.find(p => p.week === BY_ID[ME.last_topic]?.week) || PRACTICE[0];
+  const i = PRACTICE.indexOf(set);
+  const prev = PRACTICE[i - 1], next = PRACTICE[i + 1];
+  const count = set.sets.reduce((n, s) => n + s.questions.length, 0);
+  let n = 0;
+
+  V.innerHTML = `
+    <h2>Practice</h2>
+    <p>Extra questions for every week of the course, each with a worked solution. Give each one an honest try on
+      paper before you open the answer.</p>
+    <nav class="chips week-tabs" aria-label="Weeks">
+      ${PRACTICE.map(p => `<a class="chip ${p === set ? "on" : ""}" href="#/practice/${p.week}"
+        ${p === set ? 'aria-current="page"' : ""}>Week ${p.week}</a>`).join("")}
+    </nav>
+    <h3 class="practice-week">Week ${set.week}: ${esc(set.title)}</h3>
+    <p class="muted">${plural(count, "question")}, grouped by lesson.</p>
+    <div id="practice-sets">
+      ${set.sets.map(s => `
+        <section class="card practice-set">
+          <div class="row between">
+            <h3>${esc(s.title)}</h3>
+            ${BY_ID[s.lesson] ? `<a href="#/learn/${s.lesson}">Open the lesson</a>` : ""}
+          </div>
+          ${s.questions.map(q => `
+            <div class="prob">
+              <p><b>${++n}.</b> ${q.q}</p>
+              <div class="row">
+                <button class="ghost small" data-toggle="ans" aria-expanded="false">Show answer</button>
+                <button class="ghost small" data-toggle="sol" aria-expanded="false">Show steps</button>
+              </div>
+              <div class="box ans" hidden><b>Answer:</b> ${q.a}</div>
+              <div class="box sol" hidden><ol class="steps">${q.steps.map(step => `<li>${step}</li>`).join("")}</ol></div>
+            </div>`).join("")}
+        </section>`).join("")}
+    </div>
+    <div class="pager">
+      ${prev ? `<a class="prev" href="#/practice/${prev.week}"><small>Previous week</small>Week ${prev.week}: ${esc(prev.title)}</a>` : ""}
+      ${next ? `<a class="next" href="#/practice/${next.week}"><small>Next week</small>Week ${next.week}: ${esc(next.title)}</a>` : ""}
+    </div>`;
+
+  const LABELS = { ans: "answer", sol: "steps" };
+  $("#practice-sets").onclick = e => {
+    const b = e.target.closest("[data-toggle]");
+    if (!b) return;
+    const box = b.closest(".prob").querySelector(".box." + b.dataset.toggle);
+    box.hidden = !box.hidden;
+    b.setAttribute("aria-expanded", !box.hidden);
+    b.textContent = (box.hidden ? "Show " : "Hide ") + LABELS[b.dataset.toggle];
+  };
 }
 
 // ---------- Forum ----------
