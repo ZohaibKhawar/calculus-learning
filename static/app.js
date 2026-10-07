@@ -246,14 +246,38 @@ function setSide(open) {
   sideToggle.title = open ? "Hide topics" : "Show topics";
 }
 setSide(sideOpen());
+
+// Folding and unfolding: style.css slides the list, and this smears it sideways like motion
+// blur, strongest while it moves fastest and gone when it comes to rest.
+const FOLD_MS = 360;  // the same as --fold in style.css
+const foldBlur = $("#fold-blur feGaussianBlur");
+let foldFrame = 0;
+function foldSide(open) {
+  if (open === sideOpen()) return;
+  setSide(open);
+  const moving = [$("#side"), $("#q")];
+  const blur = on => moving.forEach(el => (el.style.filter = on ? "url(#fold-blur)" : ""));
+  cancelAnimationFrame(foldFrame);
+  blur(false);
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const start = performance.now();
+  const frame = now => {
+    const t = Math.min(1, (now - start) / FOLD_MS);
+    foldBlur.setAttribute("stdDeviation", `${(18 * Math.sin(Math.PI * t ** 0.6)).toFixed(1)} 0`);
+    if (t < 1) foldFrame = requestAnimationFrame(frame);
+    else blur(false);
+  };
+  blur(true);
+  frame(start);
+}
 sideToggle.addEventListener("click", () => {
-  setSide(!sideOpen());
+  foldSide(!sideOpen());
   store("topics", sideOpen() ? "open" : "closed");
 });
 
 const topicsBtn = $("#topics-btn");
 function openTopics(focusSearch) {
-  if (!isPhone()) { setSide(true); $("#q").focus(); return; }
+  if (!isPhone()) { foldSide(true); $("#q").focus(); return; }
   document.body.classList.add("topics-open");
   $("#scrim").hidden = false;
   topicsBtn.setAttribute("aria-expanded", "true");

@@ -167,17 +167,21 @@
   <!-- LEARNING APP -->
   <div id="app" hidden>
     <aside id="topics" aria-label="Course topics">
-      <div class="aside-head">
-        <button class="icon-btn side-toggle" id="side-toggle" type="button" aria-controls="side" aria-expanded="true" aria-label="Hide topics" title="Hide topics">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg>
-        </button>
-        <label class="sr-only" for="q">Search topics</label>
-        <input id="q" type="search" placeholder="Search topics" autocomplete="off" enterkeyhint="go">
-        <button class="icon-btn topics-close" id="topics-close" type="button" aria-label="Close topics">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
-        </button>
+      <!-- Sideways blur for the list while it folds away; app.js sets its strength. -->
+      <svg class="fold-blur" aria-hidden="true" focusable="false"><filter id="fold-blur" x="-25%" y="0" width="150%" height="100%"><feGaussianBlur stdDeviation="0 0"/></filter></svg>
+      <div class="aside-in">
+        <div class="aside-head">
+          <button class="icon-btn side-toggle" id="side-toggle" type="button" aria-controls="side" aria-expanded="true" aria-label="Hide topics" title="Hide topics">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg>
+          </button>
+          <label class="sr-only" for="q">Search topics</label>
+          <input id="q" type="search" placeholder="Search topics" autocomplete="off" enterkeyhint="go">
+          <button class="icon-btn topics-close" id="topics-close" type="button" aria-label="Close topics">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+          </button>
+        </div>
+        <div id="side"></div>
       </div>
-      <div id="side"></div>
     </aside>
     <div class="scrim" id="scrim" hidden></div>
     <main>

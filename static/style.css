@@ -657,11 +657,36 @@ aside {
 .topics-close { display: none; flex: none; }
 .side-toggle { flex: none; width: 40px; height: 40px; min-height: 40px; border-color: transparent; color: var(--graphite); }
 
-/* Wide screens: the topics list folds down to a narrow strip that keeps only its button */
+/* Wide screens: the topics list folds down to a narrow strip that keeps only its button.
+   The aside is the strip. It clips an inner box that keeps its full width, so nothing inside
+   re-wraps while the strip narrows, and the list slides out under a sideways blur (app.js). */
+.fold-blur { position: absolute; width: 0; height: 0; }
 @media (min-width: 861px) {
-  [data-side="closed"] #topics { width: 69px; overflow: hidden; }
-  [data-side="closed"] #topics :is(.aside-head input, #side) { display: none; }
+  #topics {
+    --fold: 0.36s;  /* the same as FOLD_MS in app.js */
+    --fold-ease: cubic-bezier(0.3, 0.7, 0.1, 1);
+    padding: 0;
+    overflow: hidden;
+    transition: width var(--fold) var(--fold-ease);
+  }
+  .aside-in {
+    width: 299px;
+    height: 100%;
+    padding: 0 14px 32px max(14px, env(safe-area-inset-left, 0px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+  #topics :is(#q, #side) { transition: opacity 0.24s ease, transform var(--fold) var(--fold-ease), visibility 0s; }
+  [data-side="closed"] #topics { width: 69px; }
+  [data-side="closed"] #topics :is(#q, #side) {
+    opacity: 0;
+    transform: translateX(-96px);
+    visibility: hidden;
+    transition: opacity 0.24s ease, transform var(--fold) var(--fold-ease), visibility 0s linear var(--fold);
+  }
 }
+@media (max-width: 860px) { .aside-in { display: contents; } }
 
 #side h4 {
   display: flex;
