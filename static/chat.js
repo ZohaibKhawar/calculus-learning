@@ -8,13 +8,14 @@
  * studying or this site.
  * Replies use the same safe markup as the reading lessons (see reader.js), plus
  * [text](#/page) links to pages of this site.
+ * The mascot at the edge of the chat shows what CalcBot is up to (see pose).
  */
 (function () {
   "use strict";
   const panel = $("#chat"), log = $("#chat-log"), chips = $("#chat-chips");
   const input = $("#chat-input"), fab = $("#chat-open");
   const file = $("#chat-file"), attach = $("#chat-attach"), tray = $("#chat-pic");
-  const sizeBtn = $("#chat-size");
+  const sizeBtn = $("#chat-size"), bot = $("#mascot");
   const SEND = 16;   // how many messages go along with a new one, for context
   const SIDE = 1568; // the longest side of a picture once shrunk, in pixels
   const phone = matchMedia("(max-width: 640px)");
@@ -22,6 +23,7 @@
   let picture = "";  // the picture waiting to be sent, as a data: URL
   let busy = false;
   let chat = 0;      // which conversation this is: a reply to one that has been closed is dropped
+  let botTimer = 0;  // sends the mascot away once he has waved or had his idea
 
   // Earlier versions kept the conversation in session storage: clear what a tab still has.
   try { sessionStorage.removeItem("chat"); } catch (e) { /* private window */ }
@@ -69,6 +71,23 @@
     if (!("chat_pictures" in ME) && !panel.hidden) setTimeout(syncAttach, 400);
   }
 
+  // The mascot leans in from the edge of the chat in one of three poses: "wave" when a chat
+  // starts, "think" while an answer is on its way, "idea" when it lands. Unless he is thinking
+  // he leaves again after a moment, so that he doesn't sit on top of the messages.
+  function pose(name, ms) {
+    clearTimeout(botTimer);
+    bot.classList.remove("wave", "think", "idea");
+    // He needs room: on a phone with the keyboard up, the conversation can be shorter than he is.
+    if (log.clientHeight < bot.firstElementChild.getBoundingClientRect().height) return leave();
+    void bot.offsetWidth;  // the chat may have only just appeared: he starts from out of sight
+    bot.classList.add("in", name);
+    if (ms) botTimer = setTimeout(leave, ms);
+  }
+  function leave() {
+    clearTimeout(botTimer);
+    bot.classList.remove("in");
+  }
+
   function welcome() {
     add("assistant", render("Hi! I'm **CalcBot**. Ask me a math question, how to study for a test, or how this site works."
       + (canSee() ? " You can also send a picture of a problem, your notes or this site." : "")));
@@ -87,6 +106,7 @@
     setPicture("");
     log.innerHTML = "";
     welcome();
+    pose("wave", 3600);
   }
 
   // The box grows with the message, up to a few lines.
@@ -156,6 +176,7 @@
     input.value = "";
     grow();
     const reply = add("assistant", `<span class="typing" role="img" aria-label="CalcBot is thinking"><i></i><i></i><i></i></span>`);
+    pose("think");
     // Only the newest picture is sent, so earlier ones are pointed out in words.
     const messages = turns.slice(-SEND).map(t => ({ role: t.role, content: t.pic && t !== turn
       ? "[I sent a picture with this message. You can't see it any more.]\n" + t.content : t.content }));
@@ -166,12 +187,14 @@
       turns.push({ role: "assistant", content: r.reply });
       reply.innerHTML = render(r.reply);
       if (pic && !r.picture) dropPicture(turn, mine);
+      pose("idea", 2600);
     } catch (e) {
       if (id !== chat) return;
       // The message stays in the chat, so the next one sent carries it along.
       reply.classList.add("err");
       reply.textContent = e.message;
       if (pic) dropPicture(turn, mine);
+      leave();
     }
     busy = false;
     log.scrollTop = reply.offsetTop - 12;  // show the start of the answer, not its end
@@ -200,6 +223,7 @@
     panel.hidden = true;
     fab.setAttribute("aria-expanded", "false");
     document.body.classList.remove("chat-open");
+    leave();
     if (restoreFocus) fab.focus();
   }
 
