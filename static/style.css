@@ -1449,27 +1449,25 @@ body.chat-big .ico-bigger, body:not(.chat-big) .ico-smaller { display: none; }
 .chat-note { margin: 0; padding: 0 14px 10px; color: var(--graphite); font-size: 12.5px; line-height: 1.4; }
 
 /* ---------- CalcBot's mascot ---------- */
-/* He leans in from the left edge of the chat, half of him out of sight, at the foot of the
-   conversation: waving hello, thinking while an answer is on its way, a lightbulb when it
-   lands. chat.js sets the pose and sends him away again, so he doesn't sit on the messages. */
-.mascot { position: relative; z-index: 1; flex: none; height: 0; pointer-events: none; }
+/* He pops up from behind the message bar, waist-high, over the end of the conversation:
+   waving hello, watching while a message is typed, thinking while an answer is on its way,
+   a lightbulb when it lands. chat.js sets the pose and sends him back down again. */
+.mascot { position: relative; z-index: 1; flex: none; height: 0; pointer-events: none; clip-path: inset(-150px 0 0); }
 .mascot svg {
   position: absolute;
+  right: 0;
   bottom: 0;
-  left: 0;
-  width: 150px;
+  width: 80px;
   height: auto;
-  transform-origin: 39% 97%;  /* his feet */
-  transform: translateX(-115%) rotate(-8deg);
-  transition: transform 0.4s ease-in;
+  transform: translateY(101%);
+  transition: transform 0.25s ease-in;
 }
-.mascot.in svg {
-  transform: translateX(-34%) rotate(12deg);
-  transition: transform 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.mascot :is(.arm-rest, .bubble, .bulb), .mascot.think .arm-wave { opacity: 0; }
-.mascot.think :is(.arm-rest, .bubble), .mascot.idea .bulb { opacity: 1; }
+/* His legs stay behind the bar */
+.mascot.in svg { transform: translateY(19.5%); transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.mascot :is(.arm-rest, .bubble, .bulb), .mascot:is(.watch, .think) .arm-wave { opacity: 0; }
+.mascot:is(.watch, .think) .arm-rest, .mascot.think .bubble, .mascot.idea .bulb { opacity: 1; }
 .mascot.in.wave .swing { animation: mascot-wave 0.45s ease-in-out infinite alternate; }
+.mascot.watch .look { transform: translate(-4px, 3px); }  /* down at the message box */
 .mascot.in.think .head { animation: mascot-tilt 2.4s ease-in-out infinite alternate; }
 .mascot.think .look { transform: translate(4px, -2px); }
 .mascot.in.think .dot { animation: typing 1s ease-in-out infinite; }
@@ -1627,7 +1625,6 @@ body.chat-big .ico-bigger, body:not(.chat-big) .ico-smaller { display: none; }
   #chat-size { display: none; }
   .chat-note { padding-bottom: calc(10px + var(--safe-b)); }
   body.chat-open { overflow: hidden; }
-  .mascot svg { width: 112px; }
   .reader { font-size: 17px; }
   .video-ready { flex-direction: column; }
 

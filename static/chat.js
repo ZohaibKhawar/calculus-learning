@@ -8,7 +8,7 @@
  * studying or this site.
  * Replies use the same safe markup as the reading lessons (see reader.js), plus
  * [text](#/page) links to pages of this site.
- * The mascot at the edge of the chat shows what CalcBot is up to (see pose).
+ * The mascot who pops up from behind the message bar shows what CalcBot is up to (see pose).
  */
 (function () {
   "use strict";
@@ -71,15 +71,15 @@
     if (!("chat_pictures" in ME) && !panel.hidden) setTimeout(syncAttach, 400);
   }
 
-  // The mascot leans in from the edge of the chat in one of three poses: "wave" when a chat
-  // starts, "think" while an answer is on its way, "idea" when it lands. Unless he is thinking
-  // he leaves again after a moment, so that he doesn't sit on top of the messages.
+  // The mascot pops up from behind the message bar in one of four poses: "wave" when a chat
+  // starts, "watch" while a message is typed, "think" while an answer is on its way, "idea"
+  // when it lands. Unless he is thinking he ducks down again after a moment, so that he
+  // doesn't sit on top of the messages.
   function pose(name, ms) {
     clearTimeout(botTimer);
-    bot.classList.remove("wave", "think", "idea");
-    // He needs room: on a phone with the keyboard up, the conversation can be shorter than he is.
-    if (log.clientHeight < bot.firstElementChild.getBoundingClientRect().height) return leave();
-    void bot.offsetWidth;  // the chat may have only just appeared: he starts from out of sight
+    // The chat may have only just appeared: he starts from out of sight.
+    if (!bot.classList.contains("in")) void bot.offsetWidth;
+    bot.classList.remove("wave", "watch", "think", "idea");
     bot.classList.add("in", name);
     if (ms) botTimer = setTimeout(leave, ms);
   }
@@ -246,6 +246,7 @@
   });
   $("#chat-form").addEventListener("submit", e => { e.preventDefault(); send(input.value); });
   input.addEventListener("input", grow);
+  input.addEventListener("input", () => { if (!busy) pose("watch", 1500); });
   input.addEventListener("keydown", e => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input.value); }
   });

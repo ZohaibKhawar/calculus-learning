@@ -229,8 +229,10 @@
       </button>
     </header>
     <div class="chat-log" id="chat-log" role="log" aria-live="polite" tabindex="0" aria-label="Conversation"></div>
-    <!-- CalcBot's mascot: leans in from the left edge of the chat, at the foot of the conversation. chat.js
-         picks his pose (wave, think or idea); the spare arm, the thought bubble and the bulb show only in theirs -->
+    <div class="chat-chips" id="chat-chips" hidden></div>
+    <!-- CalcBot's mascot: pops up from behind the message bar, over the end of the conversation. chat.js
+         picks his pose (wave, watch, think or idea); the spare arm, the thought bubble and the bulb show
+         only in theirs -->
     <div class="mascot no-print" id="mascot" aria-hidden="true">
       <svg viewBox="0 0 280 372">
         <g transform="translate(-160 64)">
@@ -323,7 +325,6 @@
         </g>
       </svg>
     </div>
-    <div class="chat-chips" id="chat-chips" hidden></div>
     <form class="chat-form" id="chat-form">
       <div class="chat-pic" id="chat-pic" hidden>
         <img id="chat-pic-img" alt="The picture you are about to send">
