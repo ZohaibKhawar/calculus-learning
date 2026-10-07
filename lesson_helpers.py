@@ -32,5 +32,7 @@ def pset(title, lesson, questions):
     return {"title": title, "lesson": lesson, "questions": questions}
 
 
-def pq(q, steps, a):
-    return {"q": q, "steps": steps, "a": a}
+def pq(q, steps, a, kind="", mins=0):
+    """A practice question. "kind" names the type of question in a few words.
+    "mins" is set on the long exam-style ones: about how long to allow for it."""
+    return {"q": q, "steps": steps, "a": a, "kind": kind, "mins": mins}

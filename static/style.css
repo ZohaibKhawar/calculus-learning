@@ -825,6 +825,7 @@ section.card { scroll-margin-top: calc(var(--hdr-total) + 72px); }
 .practice-week { margin-bottom: 4px; }
 .practice-set .row.between { align-items: baseline; margin-bottom: 12px; }
 .practice-set h3 { margin-bottom: 0; }
+.prob-kind { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-bottom: 4px; color: var(--graphite); font-size: 13px; font-weight: 700; }
 
 .qq { border-top: 1px solid var(--rule); padding: 14px 0; }
 .choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 8px; }

@@ -9,8 +9,10 @@ plain HTML/CSS/JavaScript frontend.
 - **42 lessons across 12 weeks** (precalc review → limits → derivatives → … → partial
   derivatives and tangent planes), each with the big idea, key formulas, a worked
   example, common mistakes, practice problems and a quiz, plus extra topics beyond the syllabus.
-- **Practice**: extra questions for every week (13 to 15 each, 30 for Week 4, 190 in all), grouped by lesson,
-  each with its answer and a worked solution (`practice.py` and the two `practice_weeks_*.py` files).
+- **Practice**: questions for every week (28 to 40 each, 70 for Week 4, 436 in all), grouped by lesson and
+  labelled by type, each with its answer and a worked solution. A set runs from quick questions
+  (`practice_weeks_*.py`) up to midterm level, and each week ends with long exam-style questions
+  (`practice_more_*.py`). `practice.py` joins the two.
 - **Video lessons**: animated episodes with voiceover and captions, a reading version,
   and 18 practice questions per episode (easy → expert). Your learning style picks
   whether a lesson opens as Watch, Read or Practice.

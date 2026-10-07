@@ -1193,27 +1193,33 @@ async function practicePage(arg) {
   const i = PRACTICE.indexOf(set);
   const prev = PRACTICE[i - 1], next = PRACTICE[i + 1];
   const count = set.sets.reduce((n, s) => n + s.questions.length, 0);
+  const kinds = new Set(set.sets.flatMap(s => s.questions.map(q => q.kind))).size;
   let n = 0;
 
   V.innerHTML = `
     <h2>Practice</h2>
-    <p>Extra questions for every week of the course, each with a worked solution. Give each one an honest try on
-      paper before you open the answer.</p>
+    <p>Questions for every week of the course, sorted by type, each with a worked solution. A set starts with
+      quick questions and builds up to midterm level, and every week ends with long exam-style questions.
+      Give each one an honest try on paper before you open the answer.</p>
     <nav class="chips week-tabs" aria-label="Weeks">
       ${PRACTICE.map(p => `<a class="chip ${p === set ? "on" : ""}" href="#/practice/${p.week}"
         ${p === set ? 'aria-current="page"' : ""}>Week ${p.week}</a>`).join("")}
     </nav>
     <h3 class="practice-week">Week ${set.week}: ${esc(set.title)}</h3>
-    <p class="muted">${plural(count, "question")}, grouped by lesson.</p>
+    <p class="muted">${plural(count, "question")} covering ${plural(kinds, "type")} of question, grouped by lesson.</p>
+    <nav class="jump" aria-label="Question sets">
+      ${set.sets.map((s, i) => `<button data-jump="set-${i}"><span>${i + 1}</span>${esc(s.title)}</button>`).join("")}
+    </nav>
     <div id="practice-sets">
-      ${set.sets.map(s => `
-        <section class="card practice-set">
+      ${set.sets.map((s, i) => `
+        <section class="card practice-set" id="set-${i}">
           <div class="row between">
             <h3>${esc(s.title)}</h3>
             ${BY_ID[s.lesson] ? `<a href="#/learn/${s.lesson}">Open the lesson</a>` : ""}
           </div>
           ${s.questions.map(q => `
             <div class="prob">
+              <div class="prob-kind">${esc(q.kind)}${q.mins ? `<span class="badge">About ${q.mins} min</span>` : ""}</div>
               <p><b>${++n}.</b> ${q.q}</p>
               <div class="row">
                 <button class="ghost small" data-toggle="ans" aria-expanded="false">Show answer</button>
@@ -1228,6 +1234,11 @@ async function practicePage(arg) {
       ${prev ? `<a class="prev" href="#/practice/${prev.week}"><small>Previous week</small>Week ${prev.week}: ${esc(prev.title)}</a>` : ""}
       ${next ? `<a class="next" href="#/practice/${next.week}"><small>Next week</small>Week ${next.week}: ${esc(next.title)}</a>` : ""}
     </div>`;
+
+  V.querySelector(".jump").onclick = e => {
+    const b = e.target.closest("[data-jump]");
+    if (b) document.getElementById(b.dataset.jump).scrollIntoView({ behavior: "smooth" });
+  };
 
   const LABELS = { ans: "answer", sol: "steps" };
   $("#practice-sets").onclick = e => {
