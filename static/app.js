@@ -423,6 +423,14 @@ function badge(level) {
   return `<span class="badge lvl-${level.toLowerCase()}">${level}</span>`;
 }
 
+// A bare number is set as math, so that its digits look like the ones in the formulas around
+// it. (The page's own font draws zero with a slash, which next to math reads as the empty set.)
+const asMath = s => /^\s*[−-]?\d[\d.,]*\s*$/.test(s) ? `\\(${s.trim().replace("−", "-")}\\)` : s;
+
+// A lesson counts as understood once its quiz is passed: at least two thirds right.
+const PASS = 2 / 3;
+const passedQuiz = id => (ME.quiz[id]?.best ?? 0) >= 100 * PASS - 1;
+
 // ---------- Learn ----------
 async function learn(id) {
   if (!LESSONS.length) return serverMissing();
@@ -496,15 +504,16 @@ async function learn(id) {
             <button class="ghost small" data-toggle="ans">Show answer</button>
           </div>
           <div class="box hint" hidden>${p.hint}</div>
-          <div class="box ans" hidden>${p.a}</div>
+          <div class="box ans" hidden>${asMath(p.a)}</div>
         </div>`).join("")}
       ${l.unit === "Extra" ? "" : `<p class="more-practice"><a href="#/practice/${l.week}">More ${esc(l.unit)} practice, with worked solutions</a></p>`}
     </section>
 
     <section id="s-quiz" class="card">
       <h3>6. Quick quiz</h3>
-      <p class="muted">${best === undefined ? "Check yourself. You get instant feedback on every answer."
-        : `Your best score so far: <b>${best}%</b>. Try to beat it!`}</p>
+      <p class="muted">${best === undefined ? `Get at least ${Math.ceil(l.quiz.length * PASS)} of ${l.quiz.length} right to complete this lesson. You get feedback on every answer.`
+        : passedQuiz(id) ? `You've passed this quiz. Your best score: <b>${best}%</b>.`
+        : `Your best score so far: <b>${best}%</b>. Get at least ${Math.ceil(l.quiz.length * PASS)} of ${l.quiz.length} right to complete this lesson.`}</p>
       <div id="quiz"></div>
     </section>
 
@@ -542,7 +551,8 @@ async function learn(id) {
       paintDone();
       if (isDone(id)) {
         const n = recommendNext();
-        toast(n ? `Nice! Up next: ${n.name}` : "You've finished every topic! 🎉");
+        toast(!passedQuiz(id) ? "Marked as understood. Try the quick quiz to make sure it's solid."
+          : n ? `Nice! Up next: ${n.name}` : "You've finished every topic! 🎉");
       }
     } catch (e) { toast(e.message); }
   };
@@ -599,13 +609,29 @@ async function setDone(id, done) {
   updateProgress();
 }
 
+// Choices that only make sense at the end of the list ("all three", "none", "does not exist").
+const LAST_CHOICE = /^(all three|all of (the above|these)|none\b|neither\b|both\b|depends\b|can'?t tell|there is none|does not exist|doesn'?t (exist|factor)|could do either)/i;
+
+// The order to show a question's choices in: shuffled every time, so the right answer can't be
+// learned by its position, with the "none of these" kind kept last.
+function choiceOrder(choices) {
+  const all = choices.map((_, j) => j);
+  const last = all.filter(j => LAST_CHOICE.test(choices[j].trim()));
+  const rest = all.filter(j => !last.includes(j));
+  for (let i = rest.length - 1; i > 0; i--) {
+    const k = Math.floor(Math.random() * (i + 1));
+    [rest[i], rest[k]] = [rest[k], rest[i]];
+  }
+  return [...rest, ...last];
+}
+
 function renderQuiz(l) {
   const box = $("#quiz");
   let answered = 0, correct = 0;
   box.innerHTML = l.quiz.map((q, i) => `
     <div class="qq" data-i="${i}">
       <p><b>${i + 1}.</b> ${q.q}</p>
-      <div class="choices">${q.choices.map((c, j) => `<button class="choice" data-j="${j}">${c}</button>`).join("")}</div>
+      <div class="choices">${choiceOrder(q.choices).map(j => `<button class="choice" data-j="${j}">${asMath(q.choices[j])}</button>`).join("")}</div>
       <p class="why" hidden></p>
     </div>`).join("") + `<div id="quiz-result"></div>`;
 
@@ -619,9 +645,9 @@ function renderQuiz(l) {
     const right = +btn.dataset.j === q.answer;
     answered++;
     if (right) correct++;
-    qq.querySelectorAll(".choice").forEach((b, k) => {
+    qq.querySelectorAll(".choice").forEach(b => {
       b.disabled = true;
-      if (k === q.answer) b.classList.add("right");
+      if (+b.dataset.j === q.answer) b.classList.add("right");
     });
     if (!right) btn.classList.add("wrong");
     const why = qq.querySelector(".why");
@@ -635,33 +661,44 @@ function renderQuiz(l) {
 async function finishQuiz(l, correct) {
   const total = l.quiz.length;
   const pct = Math.round(100 * correct / total);
+  const passed = correct >= Math.ceil(total * PASS);
+  const firstPass = passed && !isDone(l.id);
   const msg = pct === 100 ? "Perfect score! You've really got this."
-    : pct >= 70 ? "Nice work! Look over the explanations for the ones you missed."
-    : "Good effort. Go back through the worked example and practice problems, then try again. You'll get there.";
+    : passed ? "You passed. Look over the explanation for the one you missed."
+    : "Not there yet. Go back through the worked example and practice problems, then try again. You'll get there.";
   const res = $("#quiz-result");
   res.innerHTML = `
-    <div class="result ${pct >= 70 ? "good" : ""}">
+    <div class="result ${passed ? "good" : ""}">
       <div class="score">${correct}/${total}</div>
       <div><b>${pct}%</b> · ${msg}</div>
     </div>
-    <div class="row">
+    <div class="row" id="quiz-next">
       <button class="ghost" id="retry">Retry quiz</button>
-      ${pct === 100 && !isDone(l.id) ? `<button id="quiz-done">Mark as understood</button>` : ""}
     </div>`;
   $("#retry").onclick = () => { renderQuiz(l); math($("#quiz")); };
-  const qd = $("#quiz-done");
-  if (qd) qd.onclick = async () => {
-    await setDone(l.id, true);
-    $("#done-btn").textContent = "✓ Understood";
-    $("#done-btn").classList.remove("ghost");
-    qd.remove();
-    toast("Marked as understood ✓");
-  };
   try {
     await api("/quiz", { method: "POST", body: { topic: l.id, score: correct, total } });
     const q = ME.quiz[l.id] || { best: 0, attempts: 0 };
     ME.quiz[l.id] = { best: Math.max(q.best, pct), last: pct, attempts: q.attempts + 1 };
   } catch (e) { toast("Couldn't save your score: " + e.message); }
+  if (!passed) return;
+  // Passing the quiz is what completes a lesson, so nobody has to press a second button.
+  if (firstPass) {
+    try {
+      await setDone(l.id, true);
+      const doneBtn = $("#done-btn");
+      if (doneBtn) {
+        doneBtn.textContent = "✓ Understood";
+        doneBtn.classList.remove("ghost");
+        doneBtn.setAttribute("aria-pressed", "true");
+      }
+    } catch (e) { toast("Couldn't save your progress: " + e.message); return; }
+  }
+  const next = recommendNext();
+  if (next && $("#quiz-next")) {
+    $("#quiz-next").insertAdjacentHTML("beforeend", `<a class="btn" href="#/learn/${next.id}">Next: ${esc(next.name)}</a>`);
+  }
+  if (firstPass) toast(next ? `Lesson complete ✓ Up next: ${next.name}` : "You've finished every lesson! 🎉");
 }
 
 // Every lesson, week by week. `missing` is a lesson address that doesn't exist (an old or mistyped link).
@@ -720,8 +757,9 @@ async function dashboard() {
       ${next ? `<div class="card">
         <small>Recommended next</small>
         <h3>${esc(next.name)}</h3>
-        <p class="muted">${next.prereqs.length ? "You've done everything it builds on." : "A great place to start, with no prerequisites."}</p>
-        <button class="${last ? "ghost" : ""}" data-v="learn/${next.id}">Start lesson</button>
+        <p class="muted">${ME.quiz[next.id] ? `Your best quiz score here is ${ME.quiz[next.id].best}%. Pass the quiz to complete it.`
+          : next.prereqs.length ? "You've done everything it builds on." : "A great place to start, with no prerequisites."}</p>
+        <button class="${last ? "ghost" : ""}" data-v="learn/${next.id}">${ME.quiz[next.id] ? "Back to the lesson" : "Start lesson"}</button>
       </div>` : `<div class="card"><h3>You've finished every topic! 🎉</h3><p>Keep it fresh by retaking quizzes now and then.</p></div>`}
     </div>
 
@@ -2119,12 +2157,14 @@ const CHEV = `<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentC
 const openWeeks = new Set();   // weeks the learner opened by hand
 let weeksTouched = false;      // until they do, the week they're on starts open
 
-// The big button: the last lesson visited if it isn't understood yet, otherwise the recommended next one.
+// The big button: the lesson you were on last if you can carry on with it (it isn't understood
+// yet, and everything it builds on is), otherwise the next one in order. Looking ahead at a
+// later lesson doesn't move your place.
 function heroLesson() {
   const last = BY_ID[ME.last_topic];
-  if (last && !isDone(last.id)) return { lesson: last, resume: true };
+  if (last && !isDone(last.id) && last.prereqs.every(isDone)) return { lesson: last, resume: true };
   const next = recommendNext();
-  return next ? { lesson: next, resume: false } : null;
+  return next ? { lesson: next, resume: !!ME.quiz[next.id] } : null;
 }
 
 function renderLanding() {
@@ -2151,6 +2191,11 @@ function renderLanding() {
       ? `You've understood <b>${done} of ${course.length}</b> lessons. This one takes about ${l.minutes} minutes.`
       : ME.username ? `Signed in as <b>${esc(ME.username)}</b>. This lesson takes about ${l.minutes} minutes.`
       : `No sign-up needed, and your progress saves in this browser. This lesson takes about ${l.minutes} minutes.`;
+    // Someone who jumped ahead for one topic gets a way back to it.
+    const last = BY_ID[ME.last_topic];
+    if (last && last !== l && !isDone(last.id)) {
+      note.insertAdjacentHTML("beforeend", ` Last time you opened <a href="#/learn/${last.id}">${esc(last.name)}</a>.`);
+    }
   } else {
     cta.href = "#/formulas";
     cta.textContent = "Review the formula sheet";
@@ -2167,7 +2212,7 @@ function renderWeeks(current) {
     const here = !!current && current.week === u.week;
     const state = done === total ? "done" : here ? "current" : "";
     const label = done === total ? "Done" : here ? "You're here" : done ? `${done} of ${total} done`
-      : extra ? "Optional" : "Not started";
+      : u.lessons.some(l => ME.quiz[l.id]) ? "Started" : extra ? "Optional" : "Not started";
     const open = weeksTouched ? openWeeks.has(u.week) : here;
     const lessons = u.lessons.map(l => {
       const cls = isDone(l.id) ? "l-done" : current && l.id === current.id ? "l-next" : "";
