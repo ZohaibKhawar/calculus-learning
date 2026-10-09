@@ -16,7 +16,7 @@
   --marigold: #F0B429;
   --logo-badge: #15233B;
   --logo-glyph: #F0B429;
-  --ok: #1F8A5B;
+  --ok: #1B7D52;
   --ok-bg: #E3F4EC;
   --bad: #C2412D;
   --bad-bg: #FBEAE6;
@@ -549,6 +549,7 @@ button.link {
 .tool h3 { margin: 0 0 8px; font-size: 22px; }
 .tool p { color: var(--graphite); max-width: 34ch; margin-bottom: 14px; }
 .tool a { font-weight: 700; }
+@media (pointer: coarse) { .tool a { display: inline-flex; align-items: center; min-height: 44px; } }
 .tool-formula { margin: 6px 0 14px; font-size: 18px; overflow-x: auto; overflow-y: hidden; }
 
 /* ---------- Footer ---------- */

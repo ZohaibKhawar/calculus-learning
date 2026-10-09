@@ -802,6 +802,7 @@ async function dashboard() {
       <div class="tile"><b>${quizTopics.length}</b><span>${quizTopics.length === 1 ? "quiz" : "quizzes"} taken</span></div>
       <div class="tile"><b>${avg === null ? "–" : avg + "%"}</b><span>average best score</span></div>
     </div>
+    <p><a href="#/path">See your place on the roadmap</a></p>
 
     <div class="two">
       ${last ? `<div class="card">
@@ -868,6 +869,8 @@ async function dashboard() {
   $("#reset").onclick = async () => {
     if (!confirm("Reset all your progress, quiz scores and notes? This can't be undone.")) return;
     await api("/reset", { method: "POST" });
+    // The practice marks live in this browser, and go with the rest.
+    try { localStorage.removeItem("practice-marks"); sessionStorage.removeItem("path-done"); } catch (e) { /* blocked */ }
     await refreshMe();
     renderSidebar();
     updateProgress();

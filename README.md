@@ -1,30 +1,54 @@
 # CalcLearners
 
-A study site for my 12-week calculus course (Calc 1–3 in one): lessons, quizzes,
-animated video lessons, a formula sheet and a Q&A forum. Flask + SQLite backend,
-plain HTML/CSS/JavaScript frontend.
+A site for learning calculus from zero: a 12-week course (Calc 1–3 in one) laid out as a
+roadmap, with lessons that explain each idea in plain words, graphs you can move, worked
+examples, practice and quizzes. Flask + SQLite backend, plain HTML/CSS/JavaScript frontend.
 
 ## Features
 
+- **Roadmap** (`#/path`, `static/path.js`): the course as one winding path, a unit per week. A
+  lesson unlocks when the lessons it builds on are complete, and is completed by passing its quiz
+  (two thirds right). A locked lesson can still be opened. Each week ends in a checkpoint with a
+  skip test for people who already know it: two quiz questions per lesson, 80% completes the week.
+  CalcBot's mascot stands beside the lesson you're on.
+- **Start here** (`#/start`): what calculus is, the algebra it needs and how a lesson works, for
+  someone who has never seen it.
 - **42 lessons across 12 weeks** (precalc review → limits → derivatives → … → partial
-  derivatives and tangent planes), each with the big idea, key formulas, a worked
-  example, common mistakes, practice problems and a quiz, plus extra topics beyond the syllabus.
+  derivatives and tangent planes), each with the big idea, key formulas, worked examples, common
+  mistakes, practice problems and a quiz, plus 16 extra topics beyond the 12 weeks
+  (`lessons_weeks_*.py`, `lessons_extra.py`).
+- **Lessons that teach** (`lessons_deep.py`): limits and the first derivatives (Weeks 2 and 3) are
+  written out in full. The idea is built up in steps, with three worked examples from a warm-up
+  to a harder one, worked steps for every practice problem and five quiz questions.
+- **Graphs you can move** (`static/plot.js`): a lesson describes a picture as plain data, and a
+  tool makes it something to play with: points closing in on a limit, a secant becoming a
+  tangent, an epsilon band, Riemann rectangles, Newton's method, a direction field. 27 lessons
+  have one.
+- **Symbols explained** (`notation.py`): each lesson lists the notation it uses with how to say
+  it out loud, flags what is new, and `#/symbols` has all of it.
+- **Search that understands beginners** (`lesson_words.py`): whole words, a forgiven typo, and
+  the names newcomers use ("rate of change", "max and min").
 - **Practice**: questions for every week (28 to 40 each, 70 for Week 4, 436 in all), grouped by lesson and
   labelled by type, each with its answer and a worked solution. A set runs from quick questions
   (`practice_weeks_*.py`) up to midterm level, and each week ends with long exam-style questions
-  (`practice_more_*.py`). `practice.py` joins the two.
+  (`practice_more_*.py`). `practice.py` joins the two. A question can be marked "Got it" or
+  "Not yet" once its answer is open, and the page can be narrowed to the ones to retry. The
+  marks stay in the browser.
 - **Video lessons**: animated episodes with voiceover and captions, a reading version,
-  and 18 practice questions per episode (easy → expert). Your learning style picks
-  whether a lesson opens as Watch, Read or Practice.
-- **Progress tracking**, a **formula sheet**, and a scroll-animated landing page.
+  and 18 practice questions per episode (easy → expert), built from a PDF you upload. The
+  Videos link shows only when the AI that builds them is switched on, or you already have
+  lessons; without it, uploading gives a study plan.
+- **Progress tracking** tied to the quizzes, and a **formula sheet** whose formulas stack on a
+  phone instead of running off the side (`static/formula.js`).
 - **Optional accounts**: nobody has to sign in, but a username and password (no email) lets a learner open
   their progress on another device, and signing in can bring along what that device had saved on its own.
   A recovery code, shown once, resets a forgotten password. The profile page has sign-out everywhere, plus
   changing the username, password or recovery code and deleting the account, which each ask for the current
   password (`accounts.py`, the Accounts section of `server.py`).
-- **Q&A forum** with likes and dislikes, sorting (most liked, newest, oldest, most replies) and an automatic
-  check that scores every post from 1 to 10 in context, so thanks and study tips get through but spam and
-  insults don't (`moderation.py`).
+- **Q&A forum** with likes (and dislikes on replies only: nobody is marked down for asking), sorting
+  (most liked, newest, oldest, most replies) and an automatic check that scores every post from 1 to 10
+  in context, so thanks and study tips get through but spam and insults don't (`moderation.py`). Posts
+  from a moderator's browser carry a "CalcLearners team" badge.
 - **CalcBot**, a study helper chat on every page that answers math, study and site questions (`chatbot.py`).
   It opens as a panel down the side of the screen, a third of its width, or as a small window in the corner.
   With the AI on it also takes a picture of a problem, your notes or the site, types out the question it
