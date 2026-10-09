@@ -1,18 +1,13 @@
 # CalcLearners
 
-A site for learning calculus from zero: a 12-week course (Calc 1–3 in one) laid out as a
-roadmap, with lessons that explain each idea in plain words, graphs you can move, worked
-examples, practice and quizzes. Flask + SQLite backend, plain HTML/CSS/JavaScript frontend.
+A site for learning calculus from zero: a 12-week course (Calc 1–3 in one) with lessons that
+explain each idea in plain words, graphs you can move, worked examples, practice and quizzes. Flask + SQLite backend, plain HTML/CSS/JavaScript frontend.
 
 ## Features
 
-- **Roadmap** (`#/path`, `static/path.js`): the course as one winding path, a unit per week. A
-  lesson unlocks when the lessons it builds on are complete, and is completed by passing its quiz
-  (two thirds right). A locked lesson can still be opened. Each week ends in a checkpoint with a
-  skip test for people who already know it: two quiz questions per lesson, 80% completes the week.
-  CalcBot's mascot stands beside the lesson you're on.
-- **Start here** (`#/start`): what calculus is, the algebra it needs and how a lesson works, for
-  someone who has never seen it.
+- **Start here** (`#/start`, `static/start.js`): what calculus is, the algebra it needs and how a
+  lesson works, for someone who has never seen it. It offers a skip test for Week 1 (`#/skip/1`):
+  two quiz questions per lesson, and 80% completes the week.
 - **42 lessons across 12 weeks** (precalc review → limits → derivatives → … → partial
   derivatives and tangent planes), each with the big idea, key formulas, worked examples, common
   mistakes, practice problems and a quiz, plus 16 extra topics beyond the 12 weeks

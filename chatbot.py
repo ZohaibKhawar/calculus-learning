@@ -49,12 +49,8 @@ SITE = [
      "questions and replies to the top, and you can sort by most liked, newest, oldest or most replies."),
     (r"\b(quiz|quizzes|practice|hints?)\b",
      "Every lesson ends with practice problems (with hints) and a short quiz. Passing the quiz completes the "
-     "lesson and unlocks the ones that build on it. Open any lesson from the [roadmap](#/path). For more, the "
-     "[Practice page](#/practice) has extra questions for every week of the course, each with a worked solution."),
-    (r"\b(road ?map|locked|unlock\w*|skip test|checkpoints?)\b",
-     "The [roadmap](#/path) shows the course as a path. A lesson unlocks when you've completed the ones it "
-     "builds on, and you complete a lesson by passing its quiz. A locked lesson can still be opened. Already "
-     "know a whole week? Its checkpoint on the roadmap has a skip test: get 80% and the week is marked complete."),
+     "lesson. Open any lesson from the [course page](#/learn). For more, the [Practice page](#/practice) has "
+     "extra questions for every week of the course, each with a worked solution."),
     (r"\b(symbols?|notation)\b",
      "The [symbols page](#/symbols) lists every piece of notation the course uses, with how to say it out loud "
      "and what it means. Each lesson also explains the symbols it uses."),
@@ -75,7 +71,7 @@ SITE = [
     (r"\b(where (do|should) i (start|begin)|get started|what (should|do) i (learn|study|do) (first|next)|"
      r"which lesson|(what|which) order|course|syllabus|weeks?|calc(ulus)? ?(1|2|3|ii|iii|ab|bc))\b",
      "New to calculus? [Start here](#/start): it explains what calculus is and how the site works. The "
-     f"[roadmap](#/path) lays out all {len(LESSONS)} lessons as a path, week by week: precalculus review, limits, "
+     f"[course page](#/learn) lists all {len(LESSONS)} lessons week by week: precalculus review, limits, "
      "derivatives, integrals, differential equations and partial derivatives, plus extra topics. Each lesson "
      "has the big idea, key formulas, worked examples, common mistakes, practice problems and a quiz. The "
      "big button on the home page always points to your next lesson."),
@@ -91,7 +87,7 @@ Short sessions on several days beat one long one. [My progress](#/dashboard) sho
 HELLO = ("I'm CalcBot. Name a topic you're stuck on, like the chain rule or limits, and I'll point you to the "
          "right lesson. You can also ask how to study or how the site works.")
 
-PAGES = {"home": "the home page", "learn": "the list of all lessons", "path": "the roadmap",
+PAGES = {"home": "the home page", "learn": "the list of all lessons",
          "start": "the Start here page", "skip": "a skip test for one week", "symbols": "the symbols page",
          "practice": "the Practice page",
          "videos": "the video lessons page",
@@ -235,7 +231,7 @@ ABOUT = ("Calculus is the math of change. It has two big ideas: **derivatives** 
          "(the area under a curve). **Limits** are the tool behind both.\n\n"
          "Most people find the new ideas easier than they expected. It's usually the algebra that trips them up, "
          "which is why the course starts with a review week. [Start here](#/start) explains it with pictures, and "
-         "the [roadmap](#/path) shows the whole path.")
+         "the [course page](#/learn) shows the whole path.")
 
 PREPARE = ("To get ready for calculus, make the algebra underneath it feel easy, because that's where most "
            "mistakes come from. Week 1 of the course reviews exactly that:\n"
@@ -245,7 +241,7 @@ PREPARE = ("To get ready for calculus, make the algebra underneath it feel easy,
 
 STUCK = ("Getting stuck is a normal part of learning calculus, not a sign you're bad at math. Tell me the topic, "
          "like \"chain rule\" or \"limits\", and I'll pull up the lesson for it.\n\n"
-         "If you can't tell where it stopped making sense, go back one lesson on the [roadmap](#/path) and "
+         "If you can't tell where it stopped making sense, go back one lesson on the [course page](#/learn) and "
          "try its quiz: the gap is usually a step earlier than it feels. You can also ask on the "
          "[Q&A forum](#/forum).")
 

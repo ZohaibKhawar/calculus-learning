@@ -354,7 +354,7 @@ async function route() {
   $("#app").hidden = home;
   setMenu(false);
   closeTopics(false);
-  const navView = { watch: "videos", learn: "path", skip: "path" }[view] || view;
+  const navView = { watch: "videos", skip: "learn" }[view] || view;
   $$("[data-nav]").forEach(a => {
     if (a.dataset.nav === navView) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
@@ -367,7 +367,7 @@ async function route() {
   }
   renderSidebar();
   const views = { learn, practice: practicePage, dashboard, formulas, forum, upload, feedback, videos: videosView, watch, admin, account,
-    symbols: symbolsPage, path: pathView, skip: skipTest, start: startPage };
+    symbols: symbolsPage, skip: skipTest, start: startPage };
   await (views[view] || learn)(arg, params);
   document.title = pageTitle(view, arg);
   math(V);
@@ -382,7 +382,7 @@ async function route() {
 const HOME_TITLE = document.title;
 const PAGE_TITLES = { learn: "All lessons", practice: "Practice", dashboard: "My progress", formulas: "Formula sheet",
   forum: "Q&A forum", upload: "Upload notes", feedback: "Feedback", videos: "Video lessons", watch: "Video lesson",
-  admin: "Moderation", account: "Account", symbols: "How to read the symbols", path: "Roadmap", skip: "Skip test",
+  admin: "Moderation", account: "Account", symbols: "How to read the symbols", skip: "Skip test",
   start: "Start here" };
 function pageTitle(view, arg) {
   const lesson = view === "learn" || !PAGE_TITLES[view] ? BY_ID[arg] : null;
@@ -460,7 +460,7 @@ async function learn(id) {
     </div>`).join("");
 
   V.innerHTML = `
-    <div class="crumbs"><a href="#/path">Roadmap</a><span>${esc(unitLabel(l))}</span>${badge(l.level)}<span>About ${l.minutes} min</span></div>
+    <div class="crumbs"><span>${esc(unitLabel(l))}</span>${badge(l.level)}<span>About ${l.minutes} min</span></div>
     <h2>${esc(l.name)}</h2>
     <div class="row lesson-actions">
       <button id="done-btn"></button>
@@ -749,9 +749,8 @@ async function finishQuiz(l, correct) {
     } catch (e) { toast("Couldn't save your progress: " + e.message); return; }
   }
   const next = recommendNext();
-  if ($("#quiz-next")) {
-    $("#quiz-next").insertAdjacentHTML("beforeend", (next ? `<a class="btn" href="#/learn/${next.id}">Next: ${esc(next.name)}</a>` : "")
-      + `<a class="btn ghost" href="#/path">See the roadmap</a>`);
+  if (next && $("#quiz-next")) {
+    $("#quiz-next").insertAdjacentHTML("beforeend", `<a class="btn" href="#/learn/${next.id}">Next: ${esc(next.name)}</a>`);
   }
   if (firstPass) toast(next ? `Lesson complete ✓ Up next: ${next.name}` : "You've finished every lesson! 🎉");
 }
@@ -762,8 +761,8 @@ function topicPicker(missing) {
   V.innerHTML = `
     <h2>All lessons</h2>
     ${missing ? `<div class="card prereq" role="status"><b>We couldn't find that lesson.</b> The link may be old or mistyped. Every lesson is listed below.</div>` : ""}
-    <p>New to calculus? Follow the <a href="#/path">roadmap</a>: each lesson builds on the ones before it. Here for
-      one topic from class? Jump straight to it, or search (press <kbd>/</kbd>).</p>
+    <p>New to calculus? Go in order: each lesson builds on the ones before it. Here for one topic from class?
+      Jump straight to it, or search (press <kbd>/</kbd>).</p>
     ${next ? `<div class="card hl">
       <b>Not sure where to start?</b> We suggest <a href="#/learn/${next.id}">${esc(next.name)}</a>
       <small>(${esc(unitLabel(next))}, ${next.prereqs.length ? "you've done its prerequisites" : "no prerequisites needed"})</small>
@@ -802,7 +801,6 @@ async function dashboard() {
       <div class="tile"><b>${quizTopics.length}</b><span>${quizTopics.length === 1 ? "quiz" : "quizzes"} taken</span></div>
       <div class="tile"><b>${avg === null ? "–" : avg + "%"}</b><span>average best score</span></div>
     </div>
-    <p><a href="#/path">See your place on the roadmap</a></p>
 
     <div class="two">
       ${last ? `<div class="card">
@@ -870,7 +868,7 @@ async function dashboard() {
     if (!confirm("Reset all your progress, quiz scores and notes? This can't be undone.")) return;
     await api("/reset", { method: "POST" });
     // The practice marks live in this browser, and go with the rest.
-    try { localStorage.removeItem("practice-marks"); sessionStorage.removeItem("path-done"); } catch (e) { /* blocked */ }
+    try { localStorage.removeItem("practice-marks"); } catch (e) { /* blocked */ }
     await refreshMe();
     renderSidebar();
     updateProgress();
@@ -2449,7 +2447,7 @@ const SEARCH_PAGES = [
   { name: "Q&A forum", sub: "Ask other learners", href: "#/forum", also: ["forum", "ask a question", "community"] },
   { name: "How to read the symbols", sub: "Notation, said out loud", href: "#/symbols", also: ["symbols", "notation", "math symbols", "what does this symbol mean"] },
   { name: "Start here", sub: "What calculus is, and how to begin", href: "#/start", also: ["what is calculus", "whats calculus", "new to calculus", "where do i start", "beginner", "basics", "introduction", "getting started", "calculus"] },
-  { name: "Roadmap", sub: "The course as a path, lesson by lesson", href: "#/path", also: ["roadmap", "path", "course", "syllabus", "what order", "what comes next", "all lessons"] }
+  { name: "All lessons", sub: "The course, week by week", href: "#/learn", also: ["course", "syllabus", "what order", "what comes next", "all lessons"] }
 ];
 
 let searchIndex = null;
