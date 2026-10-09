@@ -3,7 +3,7 @@
  * Articles use a small, safe markup (all text is HTML-escaped):
  *   ## Heading          section heading
  *   - item / 1. item    lists
- *   **bold**            bold
+ *   **bold**  *italic*  bold, italic
  *   > text              tip / common-mistake callout
  *   \( x \)  \[ x \]    inline / display math (KaTeX)
  *   ::: example Title   worked example: numbered steps, then "Answer: ..."
@@ -18,11 +18,14 @@ window.Reader = (function () {
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-  // Text with inline/display math and **bold**.
+  // Text with inline/display math, **bold** and *italic*. A lone star, as in "2 * 3", is left alone:
+  // italics must hug their words and start after a space or bracket.
   function inline(s) {
     return String(s ?? "").split(/(\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\))/).map((part, i) => {
       if (i % 2) return tex(part.slice(2, -2), part.startsWith("\\["));
-      return esc(part).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+      return esc(part).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+        .replace(/(^|[\s(;>])\*(?!\s)([^*\n]+?)\*(?=[\s).,!?:;&<]|$)/g,
+          (all, lead, words) => /\s$/.test(words) ? all : `${lead}<i>${words}</i>`);
     }).join("");
   }
 
