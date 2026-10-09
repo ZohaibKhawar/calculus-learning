@@ -467,7 +467,7 @@ WEEKS_1_6 = [
         [pr(r"\(\frac{d}{dx}(3\sin x - 2\cos x)\)", "Differentiate each term.", r"\(3\cos x + 2\sin x\)"),
          pr(r"\(\frac{d}{dx}(x^2\sin x)\)", "Product rule.", r"\(2x\sin x + x^2\cos x\)"),
          pr(r"Exact value of \(\cos\frac{2\pi}{3}\).", r"\(\frac{2\pi}{3} = 120^\circ\) is in the second quadrant.", r"\(-\frac12\)")],
-        [mc(r"\(\frac{d}{dx}\tan x =\)", [r"\(\sec x\tan x\)", r"\(-\csc^2x\)", r"\(\cot x\)", r"\(\sec^2x\)"], 3, r"Quotient rule on \(\frac{\sin x}{\cos x}\) gives \(\frac{1}{\cos^2x}\)."),
+        [mc(r"\(\frac{d}{dx}\tan x =\)", [r"\(\sec x\tan x\)", r"\(-\csc^2x\)", r"\(\cot x\)", r"\(\sec^2x\)"], 3, r"Write \(\tan x = \frac{\sin x}{\cos x}\). The quotient rule (Week 5) turns that into \(\frac{1}{\cos^2x}\), which is \(\sec^2x\)."),
          mc(r"\(\sin\frac\pi6 =\)", [r"\(\frac12\)", r"\(\frac{\sqrt3}{2}\)", r"\(\frac{\sqrt2}{2}\)", "1"], 0, r"\(\frac\pi6 = 30^\circ\)."),
          mc(r"\(\frac{d}{dx}\cos x =\)", [r"\(\sin x\)", r"\(-\sin x\)", r"\(-\cos x\)", r"\(\sec x\)"], 1, "Cosine-family derivatives carry a minus sign.")],
     ),
@@ -497,7 +497,7 @@ WEEKS_1_6 = [
          pr(r"\(\frac{d}{dx}\sin(4x)\)", r"Inside \(4x\).", r"\(4\cos(4x)\)"),
          pr(r"\(\frac{d}{dx}\cos^3x\)", r"Outside \(u^3\), inside \(\cos x\).", r"\(-3\cos^2x\sin x\)")],
         [mc(r"\(\frac{d}{dx}(2x + 1)^3 =\)", [r"\(3(2x + 1)^2\)", r"\(6(2x + 1)^2\)", r"\(6(2x + 1)^3\)", r"\(3(2x)^2\)"], 1, r"\(3(2x + 1)^2\cdot 2\)."),
-         mc(r"\(\frac{d}{dx}\sin(x^2) =\)", [r"\(\cos(x^2)\)", r"\(\cos(2x)\)", r"\(2x\cos(x^2)\)", r"\(2x\sin(x^2)\)"], 2, "Outside cos, times the inside's derivative 2x."),
+         mc(r"\(\frac{d}{dx}\sin(x^2) =\)", [r"\(\cos(x^2)\)", r"\(\cos(2x)\)", r"\(2x\cos(x^2)\)", r"\(2x\sin(x^2)\)"], 2, r"The outside function \(\sin\) differentiates to \(\cos\), and the inside \(x^2\) has derivative \(2x\)."),
          mc(r"\(h(x) = f(g(x))\), \(g(1) = 3\), \(g'(1) = 2\), \(f'(3) = 5\). Then \(h'(1) =\)", ["10", "15", "6", "5"], 0, r"\(f'(g(1))\cdot g'(1) = 5\cdot 2\).")],
     ),
     lesson(

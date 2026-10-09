@@ -2,12 +2,17 @@
 
 Each lesson gets "week" (1-12, or 13 for extras), "unit" (e.g. "Week 3"),
 "unit_title" (e.g. "Derivatives") and "also" (other things people call the topic,
-which the site's search matches).
+which the site's search matches). The teaching material from lessons_deep.py is merged
+in: "learn" (explanations and pictures), "examples" (every worked example, easiest
+first), worked "steps" on practice problems and extra quiz questions. "symbols" lists
+the notation a lesson uses, with how to read it (notation.py).
 """
 from lesson_words import EVERYDAY
+from lessons_deep import DEEP
 from lessons_extra import EXTRA_LESSONS
 from lessons_weeks_1_6 import WEEKS_1_6
 from lessons_weeks_7_12 import WEEKS_7_12
+from notation import add_symbols
 from search_terms import SEARCH
 
 EXTRA_WEEK = 13
@@ -41,10 +46,24 @@ def _extra(lesson):
     return lesson
 
 
+def _deepen(lesson):
+    """Merge in what lessons_deep.py has for this lesson."""
+    more = DEEP.get(lesson["id"], {})
+    if "example" in more:
+        lesson["example"] = more["example"]
+    lesson["learn"] = more.get("learn", [])
+    lesson["examples"] = [lesson["example"] if e == "main" else e for e in more.get("examples", ["main"])]
+    for i, steps in more.get("steps", {}).items():
+        lesson["practice"][i]["steps"] = steps
+    lesson["quiz"] = lesson["quiz"] + more.get("quiz", [])
+
+
 LESSONS = WEEKS_1_6 + WEEKS_7_12 + [_extra(l) for l in EXTRA_LESSONS]
 for _l in LESSONS:
     _l["unit"] = "Extra" if _l["week"] == EXTRA_WEEK else f"Week {_l['week']}"
     _l["unit_title"] = WEEK_TITLES[_l["week"]]
     _l["also"] = EVERYDAY.get(_l["id"], []) + SEARCH.get(_l["id"], ("", []))[1]
+    _deepen(_l)
+add_symbols(LESSONS)
 
 LESSON_IDS = {l["id"] for l in LESSONS}

@@ -1,7 +1,7 @@
 {% extends "page.html" %}
 {# Lesson text is written by us and carries its own <b>/<i> and LaTeX, so it goes in as-is ("safe"), the way app.js shows it. #}
 {% block title %}{{ title }}{% endblock %}
-{% block description %}{{ lesson.name }}{% if also_called %} ({{ also_called|join(', ') }}){% endif %} explained: the key formulas, a worked example, common mistakes and {{ lesson.practice|length }} practice problems with hints and answers. Free, no sign-up.{% endblock %}
+{% block description %}{{ lesson.name }}{% if also_called %} ({{ also_called|join(', ') }}){% endif %} explained: the key formulas, {{ "worked examples" if lesson.examples|length > 1 else "a worked example" }}, common mistakes and {{ lesson.practice|length }} practice problems with hints and answers. Free, no sign-up.{% endblock %}
 {% block main %}
     <div class="crumbs">
       <a href="/lessons">All lessons</a>
@@ -21,9 +21,35 @@
     </div>
     {% endif %}
 
+    {# A lesson with a full explanation leads with it and ends on the summary, as in the app. #}
+    {% macro learn_blocks() %}
+      {% for b in lesson.learn %}
+      <div class="learn-block">
+        <h3>{{ b.h|safe }}</h3>
+        {{ b.body|safe }}
+        {% if b.fig %}<figure class="fig-plot" data-plot='{{ b.fig|tojson }}'><figcaption>{{ b.cap|safe }}</figcaption></figure>{% endif %}
+      </div>
+      {% endfor %}
+    {% endmacro %}
     <section id="s-idea" class="card">
       <h2>The big idea</h2>
+      {% if lesson.learn|length >= 3 %}
+      {{ learn_blocks() }}
+      <div class="learn-block"><h3>In short</h3><p>{{ lesson.idea|safe }}</p></div>
+      {% else %}
       <p>{{ lesson.idea|safe }}</p>
+      {{ learn_blocks() }}
+      {% endif %}
+      {% if lesson.symbols %}
+      <details class="symbols">
+        <summary>How to read the symbols</summary>
+        <dl>
+          {% for tex, say, meaning, fresh in lesson.symbols %}
+          <div><dt>\({{ tex|safe }}\)</dt><dd><b>Say:</b> "{{ say }}"<small>{{ meaning }}</small></dd></div>
+          {% endfor %}
+        </dl>
+      </details>
+      {% endif %}
     </section>
 
     <section id="s-formulas" class="card">
@@ -34,12 +60,17 @@
     </section>
 
     <section id="s-example" class="card">
-      <h2>Worked example</h2>
-      <p class="problem">{{ lesson.example.problem|safe }}</p>
-      <ol class="steps">
-        {% for step in lesson.example.steps %}<li>{{ step|safe }}</li>{% endfor %}
-      </ol>
-      <p class="answer"><b>Answer:</b> {{ lesson.example.answer|safe }}</p>
+      <h2>Worked example{{ "s" if lesson.examples|length > 1 }}</h2>
+      {% for e in lesson.examples %}
+      <div class="ex">
+        {% if lesson.examples|length > 1 %}<h3>Example {{ loop.index }}</h3>{% endif %}
+        <p class="problem">{{ e.problem|safe }}</p>
+        <ol class="steps">
+          {% for step in e.steps %}<li>{{ step|safe }}</li>{% endfor %}
+        </ol>
+        <p class="answer"><b>Answer:</b> {{ e.answer|safe }}</p>
+      </div>
+      {% endfor %}
     </section>
 
     <section id="s-mistakes" class="card">
@@ -57,6 +88,9 @@
         <p><b>{{ loop.index }}.</b> {{ p.q|safe }}</p>
         <details><summary>Hint</summary><div class="box hint">{{ p.hint|safe }}</div></details>
         <details><summary>Answer</summary><div class="box ans">{{ p.a|safe }}</div></details>
+        {% if p.steps %}<details><summary>Steps</summary><div class="box sol"><ol class="steps">
+          {% for step in p.steps %}<li>{{ step|safe }}</li>{% endfor %}
+        </ol></div></details>{% endif %}
       </div>
       {% endfor %}
       {% if lesson.unit != "Extra" %}

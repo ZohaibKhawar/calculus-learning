@@ -366,7 +366,8 @@ async function route() {
     return;
   }
   renderSidebar();
-  const views = { learn, practice: practicePage, dashboard, formulas, forum, upload, feedback, videos: videosView, watch, admin, account };
+  const views = { learn, practice: practicePage, dashboard, formulas, forum, upload, feedback, videos: videosView, watch, admin, account,
+    symbols: symbolsPage };
   await (views[view] || learn)(arg, params);
   document.title = pageTitle(view, arg);
   math(V);
@@ -381,7 +382,7 @@ async function route() {
 const HOME_TITLE = document.title;
 const PAGE_TITLES = { learn: "All lessons", practice: "Practice", dashboard: "My progress", formulas: "Formula sheet",
   forum: "Q&A forum", upload: "Upload notes", feedback: "Feedback", videos: "Video lessons", watch: "Video lesson",
-  admin: "Moderation", account: "Account" };
+  admin: "Moderation", account: "Account", symbols: "How to read the symbols" };
 function pageTitle(view, arg) {
   const lesson = view === "learn" || !PAGE_TITLES[view] ? BY_ID[arg] : null;
   return (lesson ? lesson.name : PAGE_TITLES[view] || "All lessons") + " - CalcLearners";
@@ -446,10 +447,16 @@ async function learn(id) {
   const best = ME.quiz[id]?.best;
 
   const sections = [
-    ["s-idea", "Big idea"], ["s-formulas", "Formulas"], ["s-example", "Example"],
+    ["s-idea", "Big idea"], ["s-formulas", "Formulas"], ["s-example", l.examples.length > 1 ? "Examples" : "Example"],
     ["s-mistakes", "Mistakes"], ["s-practice", "Practice"], ["s-quiz", "Quiz"],
     ["s-videos", "Videos"], ["s-notes", "Notes"]
   ];
+  // A lesson with a full explanation leads with it and ends on the one-paragraph summary.
+  // Otherwise the summary comes first, with any picture under it.
+  const taught = l.learn.length >= 3;
+  const learnBlocks = l.learn.map(b => `<div class="learn-block">
+      <h4>${b.h}</h4>${b.body}${b.fig ? Plot.figure(b.fig, b.cap) : ""}
+    </div>`).join("");
 
   V.innerHTML = `
     <div class="crumbs"><span>${esc(unitLabel(l))}</span>${badge(l.level)}<span>About ${l.minutes} min</span></div>
@@ -471,7 +478,9 @@ async function learn(id) {
 
     <section id="s-idea" class="card">
       <h3>1. The big idea</h3>
-      <p>${l.idea}</p>
+      ${taught ? `${learnBlocks}<div class="learn-block"><h4>In short</h4><p>${l.idea}</p></div>`
+        : `<p>${l.idea}</p>${learnBlocks}`}
+      ${symbolsCard(l)}
     </section>
 
     <section id="s-formulas" class="card">
@@ -480,14 +489,18 @@ async function learn(id) {
     </section>
 
     <section id="s-example" class="card">
-      <h3>3. Worked example</h3>
-      <p class="problem">${l.example.problem}</p>
-      <ol class="steps">${l.example.steps.map(s => `<li hidden>${s}</li>`).join("")}</ol>
-      <p class="answer" hidden><b>Answer:</b> ${l.example.answer}</p>
-      <div class="row">
-        <button id="next-step">Show step 1 of ${l.example.steps.length}</button>
-        <button class="ghost" id="all-steps">Show everything</button>
-      </div>
+      <h3>3. Worked example${l.examples.length > 1 ? "s" : ""}</h3>
+      ${l.examples.length > 1 ? `<p class="muted">${l.examples.length} examples, starting with a warm-up and ending on a harder one.</p>` : ""}
+      ${l.examples.map((e, i) => `<div class="ex">
+        ${l.examples.length > 1 ? `<h4>Example ${i + 1}</h4>` : ""}
+        <p class="problem">${e.problem}</p>
+        <ol class="steps">${e.steps.map(s => `<li hidden>${s}</li>`).join("")}</ol>
+        <p class="answer" hidden><b>Answer:</b> ${e.answer}</p>
+        <div class="row">
+          <button class="next-step">Show step 1 of ${e.steps.length}</button>
+          <button class="ghost all-steps">Show everything</button>
+        </div>
+      </div>`).join("")}
       <small>Tip: try to predict each step before you reveal it. That's where the learning happens.</small>
     </section>
 
@@ -505,9 +518,11 @@ async function learn(id) {
           <div class="row">
             <button class="ghost small" data-toggle="hint">💡 Hint</button>
             <button class="ghost small" data-toggle="ans">Show answer</button>
+            ${p.steps ? `<button class="ghost small" data-toggle="sol">Show steps</button>` : ""}
           </div>
           <div class="box hint" hidden>${p.hint}</div>
           <div class="box ans" hidden>${asMath(p.a)}</div>
+          ${p.steps ? `<div class="box sol" hidden><ol class="steps">${p.steps.map(s => `<li>${s}</li>`).join("")}</ol></div>` : ""}
         </div>`).join("")}
       ${l.unit === "Extra" ? "" : `<p class="more-practice"><a href="#/practice/${l.week}">More ${esc(l.unit)} practice, with worked solutions</a></p>`}
     </section>
@@ -566,29 +581,35 @@ async function learn(id) {
     if (b) document.getElementById(b.dataset.jump).scrollIntoView({ behavior: "smooth" });
   };
 
-  // Worked example, one step at a time
-  const steps = $$("#s-example .steps li");
-  const nextBtn = $("#next-step"), allBtn = $("#all-steps");
-  let shown = 0;
-  const showUpTo = n => {
-    while (shown < n) steps[shown++].hidden = false;
-    if (shown >= steps.length) {
-      $("#s-example .answer").hidden = false;
-      nextBtn.hidden = allBtn.hidden = true;
-    } else {
-      nextBtn.textContent = `Show step ${shown + 1} of ${steps.length}`;
-    }
-  };
-  nextBtn.onclick = () => showUpTo(shown + 1);
-  allBtn.onclick = () => showUpTo(steps.length);
+  // The pictures in the explanation (plot.js)
+  Plot.hydrate(V);
 
-  // Practice hints / answers
+  // Worked examples, one step at a time
+  $$("#s-example .ex").forEach(box => {
+    const steps = [...box.querySelectorAll(".steps li")];
+    const nextBtn = box.querySelector(".next-step"), allBtn = box.querySelector(".all-steps");
+    let shown = 0;
+    const showUpTo = n => {
+      while (shown < n) steps[shown++].hidden = false;
+      if (shown >= steps.length) {
+        box.querySelector(".answer").hidden = false;
+        nextBtn.hidden = allBtn.hidden = true;
+      } else {
+        nextBtn.textContent = `Show step ${shown + 1} of ${steps.length}`;
+      }
+    };
+    nextBtn.onclick = () => showUpTo(shown + 1);
+    allBtn.onclick = () => showUpTo(steps.length);
+  });
+
+  // Practice hints, answers and worked steps
   $("#s-practice").onclick = e => {
     const b = e.target.closest("[data-toggle]");
     if (!b) return;
     const box = b.closest(".prob").querySelector(".box." + b.dataset.toggle);
     box.hidden = !box.hidden;
-    if (b.dataset.toggle === "ans") b.textContent = box.hidden ? "Show answer" : "Hide answer";
+    const word = { ans: "answer", sol: "steps" }[b.dataset.toggle];
+    if (word) b.textContent = (box.hidden ? "Show " : "Hide ") + word;
   };
 
   renderQuiz(l);
@@ -603,6 +624,35 @@ async function learn(id) {
       status.textContent = "Saved ✓";
     } catch (e) { status.textContent = e.message; }
   }, 700);
+}
+
+// The notation a lesson uses, with how to say each symbol out loud. It starts open when the
+// lesson is the first in the course to use one of them.
+function symbolRow([tex, say, meaning, fresh], extra = "") {
+  return `<div><dt>\\(${tex}\\)${fresh ? ` <span class="badge ok">new</span>` : ""}</dt>
+    <dd><b>Say:</b> "${esc(say)}"<small>${esc(meaning)}${extra}</small></dd></div>`;
+}
+function symbolsCard(l) {
+  if (!l.symbols.length) return "";
+  const fresh = l.symbols.filter(s => s[3]);
+  return `<details class="symbols" ${fresh.length ? "open" : ""}>
+    <summary>How to read the symbols${fresh.length ? ` (${fresh.length} new in this lesson)` : ""}</summary>
+    <dl>${[...fresh, ...l.symbols.filter(s => !s[3])].map(s => symbolRow(s)).join("")}</dl>
+    <p><a href="#/symbols">Every symbol in the course</a></p>
+  </details>`;
+}
+
+// ---------- Symbols (#/symbols): every piece of notation, in the order the course meets it ----------
+function symbolsPage() {
+  if (!LESSONS.length) return serverMissing();
+  const first = new Map();
+  for (const l of LESSONS) for (const s of l.symbols) if (!first.has(s[0])) first.set(s[0], [s, l]);
+  V.innerHTML = `
+    <h2>How to read the symbols</h2>
+    <p>Math notation is shorthand, and nobody is born knowing it. Each symbol here comes with how to say it out loud,
+      what it means, and the lesson where the course first uses it.</p>
+    <div class="card symbols"><dl>${[...first.values()].map(([s, l]) =>
+      symbolRow([s[0], s[1], s[2], false], ` First used in <a href="#/learn/${l.id}">${esc(l.name)}</a>.`)).join("")}</dl></div>`;
 }
 
 async function setDone(id, done) {
@@ -1268,7 +1318,8 @@ function formulas() {
   if (!LESSONS.length) return serverMissing();
   V.innerHTML = `
     <h2>Formula sheet</h2>
-    <p>Every key formula from the course, week by week. Click a topic name to open its full lesson.</p>
+    <p>Every key formula from the course, week by week. Click a topic name to open its full lesson.
+      Not sure what a symbol means? See <a href="#/symbols">how to read the symbols</a>.</p>
     <div class="row no-print">
       <input id="fq" type="search" placeholder="Filter, e.g. chain, series, polar, gradient">
       <button class="ghost" id="print">Print / save as PDF</button>
@@ -2295,7 +2346,8 @@ function wordMatch(typed, word, typos) {
 const SEARCH_PAGES = [
   { name: "Formula sheet", sub: "Every formula on one page", href: "#/formulas", also: ["formulas", "formula sheet", "cheat sheet", "all formulas"] },
   { name: "Practice questions", sub: "With worked solutions", href: "#/practice", also: ["practice", "practice problems", "exercises", "worksheets", "exam questions", "midterm", "test prep"] },
-  { name: "Q&A forum", sub: "Ask other learners", href: "#/forum", also: ["forum", "ask a question", "community"] }
+  { name: "Q&A forum", sub: "Ask other learners", href: "#/forum", also: ["forum", "ask a question", "community"] },
+  { name: "How to read the symbols", sub: "Notation, said out loud", href: "#/symbols", also: ["symbols", "notation", "math symbols", "what does this symbol mean"] }
 ];
 
 let searchIndex = null;

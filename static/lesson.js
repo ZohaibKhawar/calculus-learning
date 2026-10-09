@@ -8,6 +8,8 @@
       f.querySelector(".f-row").outerHTML = Formula.row(f.dataset.tex);
     });
   }
+  // The pictures in the explanation (plot.js).
+  if (window.Plot) Plot.hydrate(main);
   if (!window.renderMathInElement) return;
   renderMathInElement(main, {
     delimiters: [
