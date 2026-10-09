@@ -2628,6 +2628,13 @@ function startGraph() {
     // The server now holds our ID in its cookie, so the old copy can go.
     if (LEGACY_UID) { try { localStorage.removeItem("uid"); } catch (e) { /* blocked */ } LEGACY_UID = null; }
     LESSONS = await api("/lessons");
+    // During an update the page can be a step ahead of the server for a moment. Lessons from
+    // the older server lack the newer parts, so they are filled in as empty.
+    for (const l of LESSONS) {
+      l.learn = l.learn || [];
+      l.examples = l.examples || [l.example];
+      l.symbols = l.symbols || [];
+    }
     BY_ID = Object.fromEntries(LESSONS.map(l => [l.id, l]));
   } catch (e) {
     if (e.status === 403) $("#banner").textContent = e.message;  // this browser was blocked
