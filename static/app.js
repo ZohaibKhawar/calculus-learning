@@ -1426,8 +1426,9 @@ async function forum(_, params) {
 
   V.innerHTML = `
     <h2>Q&amp;A Forum</h2>
-    <p>Stuck? Ask the community. Math questions, study tips, follow-up questions and a quick thanks are all
-      welcome. Posts are checked automatically so the forum stays kind and about math.
+    <p>Stuck? Ask the community. No question is too basic: if you're wondering, someone else is too. Math
+      questions, study tips, follow-ups and a quick thanks are all welcome. Posts are checked automatically so the
+      forum stays kind and about math.
       You can type math like <code>\\( x^2 \\)</code> and it will display nicely.</p>
     <p><small>Posts are public, so please don't share personal details such as full names, contact details or
       your school. Under 13? Ask a parent or guardian before you post. See the
@@ -1542,13 +1543,18 @@ async function forum(_, params) {
 const THUMB = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
   stroke-linejoin="round" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>`;
 
-// Like and dislike buttons for a question ("q") or reply ("a"). Pressing your own vote again takes it back.
+// Like and dislike buttons for a reply ("a"); a question ("q") can only be liked, so that nobody
+// is marked down for asking. Pressing your own vote again takes it back.
 function voteButtons(kind, p) {
   const button = (value, word, count) => `<button class="vote ${value < 0 ? "down" : ""} ${p.my_vote === value ? "on" : ""}"
     data-vote="${kind}" data-id="${p.id}" data-value="${value}" aria-pressed="${p.my_vote === value}"
     aria-label="${word} (${count})" ${p.mine ? `disabled title="You can't vote on your own post"` : `title="${word}"`}>${THUMB}<span>${count}</span></button>`;
-  return `<div class="votes" role="group" aria-label="Likes and dislikes">${button(1, "Like", p.likes)}${button(-1, "Dislike", p.dislikes)}</div>`;
+  return kind === "q" ? `<div class="votes" role="group" aria-label="Likes">${button(1, "Like", p.likes)}</div>`
+    : `<div class="votes" role="group" aria-label="Likes and dislikes">${button(1, "Like", p.likes)}${button(-1, "Dislike", p.dislikes)}</div>`;
 }
+
+// Posts from the people who run the site carry a badge, so a post that says it's from them can be believed.
+const staffBadge = p => p.staff ? ` <span class="badge staff">CalcLearners team</span>` : "";
 
 // Moderators see the 1-10 score the automatic check gave a post.
 const scoreBadge = p => ME.admin && p.score ? ` · <span class="badge" title="Automatic check: 1 (doesn't belong) to 10 (great)">${p.score}/10</span>` : "";
@@ -1562,7 +1568,7 @@ function renderQuestion(q) {
       ${voteButtons("q", q)}
       <div class="meta">
         ${topic ? `<a class="chip" href="#/learn/${topic.id}">${esc(topic.name)}</a>` : ""}
-        ${esc(q.author)} · ${timeAgo(q.created)} · ${q.answer_count} ${q.answer_count === 1 ? "reply" : "replies"}${scoreBadge(q)}
+        ${esc(q.author)}${staffBadge(q)} · ${timeAgo(q.created)} · ${q.answer_count} ${q.answer_count === 1 ? "reply" : "replies"}${scoreBadge(q)}
         ${q.mine || ME.admin ? ` · <button class="link" data-del="${q.id}">Delete</button>` : ""}
         ${ME.admin && !q.mine ? ` · <button class="link" data-block="q" data-id="${q.id}">Block author</button>` : ""}
         ${q.mine ? "" : ` · <button class="link" data-report="q" data-id="${q.id}">Report</button>`}
@@ -1583,7 +1589,7 @@ function renderAnswer(a) {
     <div class="post-foot">
       ${voteButtons("a", a)}
       <div class="meta">
-        ${esc(a.author)} · ${timeAgo(a.created)}${scoreBadge(a)}
+        ${esc(a.author)}${staffBadge(a)} · ${timeAgo(a.created)}${scoreBadge(a)}
         ${a.mine || ME.admin ? ` · <button class="link" data-del-answer="${a.id}">Delete</button>` : ""}
         ${ME.admin && !a.mine ? ` · <button class="link" data-block="a" data-id="${a.id}">Block author</button>` : ""}
         ${a.mine ? "" : ` · <button class="link" data-report="a" data-id="${a.id}">Report</button>`}

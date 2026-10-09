@@ -119,6 +119,7 @@ CREATE TABLE IF NOT EXISTS questions (
     title TEXT NOT NULL,
     body TEXT NOT NULL DEFAULT '',
     score INTEGER,               -- 1-10 from moderation.py, shown to moderators only
+    staff INTEGER NOT NULL DEFAULT 0,  -- posted from a moderator's browser: shown with a "team" badge
     created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS answers (
@@ -128,6 +129,7 @@ CREATE TABLE IF NOT EXISTS answers (
     author TEXT NOT NULL,
     body TEXT NOT NULL,
     score INTEGER,
+    staff INTEGER NOT NULL DEFAULT 0,
     created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS votes (
@@ -238,6 +240,9 @@ def init_db():
         for table in ("questions", "answers"):
             if "score" not in [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN score INTEGER")  # fixed names from this list
+            # Posts written before the "team" badge existed keep it off.
+            if "staff" not in [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN staff INTEGER NOT NULL DEFAULT 0")  # fixed names from this list
         # Accounts made before recovery codes lack this column.
         if "recovery_hash" not in [r[1] for r in conn.execute("PRAGMA table_info(accounts)")]:
             conn.execute("ALTER TABLE accounts ADD COLUMN recovery_hash TEXT")
@@ -1069,14 +1074,16 @@ def put_note(topic):
 # The whole forum query is one fixed string. Sorting and the "unanswered" filter are
 # switched by parameters (:sort = 'liked' ...), so user input only ever travels as data.
 # "Most liked" ranks by likes minus dislikes, then by likes.
+# A question can only be liked: nobody should be marked down for asking. (Dislikes given to
+# questions before that rule are still in the votes table, and are ignored here.)
 QUESTIONS_SQL = """
     SELECT * FROM (
-        SELECT q.id, q.author, q.topic_id, q.title, q.body, q.created, q.score,
+        SELECT q.id, q.author, q.topic_id, q.title, q.body, q.created, q.score, q.staff,
                q.user_id = :uid AS mine,
                (SELECT COUNT(*) FROM votes v WHERE v.kind = 'q' AND v.target_id = q.id AND v.value = 1) AS likes,
-               (SELECT COUNT(*) FROM votes v WHERE v.kind = 'q' AND v.target_id = q.id AND v.value = -1) AS dislikes,
+               0 AS dislikes,
                COALESCE((SELECT v.value FROM votes v
-                         WHERE v.kind = 'q' AND v.target_id = q.id AND v.user_id = :uid), 0) AS my_vote,
+                         WHERE v.kind = 'q' AND v.target_id = q.id AND v.user_id = :uid AND v.value = 1), 0) AS my_vote,
                (SELECT COUNT(*) FROM answers a WHERE a.question_id = q.id) AS answer_count
         FROM questions q
         WHERE (:topic = '' OR q.topic_id = :topic)
@@ -1093,7 +1100,7 @@ QUESTIONS_SQL = """
 # Replies: the most liked first, then in the order they were written.
 ANSWERS_SQL = """
     SELECT * FROM (
-        SELECT a.id, a.question_id, a.author, a.body, a.created, a.score,
+        SELECT a.id, a.question_id, a.author, a.body, a.created, a.score, a.staff,
                a.user_id = :uid AS mine,
                (SELECT COUNT(*) FROM votes v WHERE v.kind = 'a' AND v.target_id = a.id AND v.value = 1) AS likes,
                (SELECT COUNT(*) FROM votes v WHERE v.kind = 'a' AND v.target_id = a.id AND v.value = -1) AS dislikes,
@@ -1147,8 +1154,8 @@ def ask():
     if topic:
         topic_or_400(topic)
     score = score_post("q", f"{title}\n\n{details}".strip(), topic=LESSON_BY_ID[topic]["name"] if topic else "")
-    cur = run("INSERT INTO questions (user_id, author, topic_id, title, body, score) VALUES (?, ?, ?, ?, ?, ?)",
-              (uid, author_name(uid), topic, title, details, score))
+    cur = run("INSERT INTO questions (user_id, author, topic_id, title, body, score, staff) VALUES (?, ?, ?, ?, ?, ?, ?)",
+              (uid, author_name(uid), topic, title, details, score, int(is_admin(uid))))
     return jsonify(id=cur.lastrowid)
 
 
@@ -1293,14 +1300,14 @@ def answer(qid):
     if len(text) > 5000:
         abort(400, "Your reply is too long (max 5000 characters).")
     score = score_post("a", text, question=f"{q['title']}\n\n{q['body']}".strip())
-    run("INSERT INTO answers (question_id, user_id, author, body, score) VALUES (?, ?, ?, ?, ?)",
-        (qid, uid, author_name(uid), text, score))
+    run("INSERT INTO answers (question_id, user_id, author, body, score, staff) VALUES (?, ?, ?, ?, ?, ?)",
+        (qid, uid, author_name(uid), text, score, int(is_admin(uid))))
     return jsonify(ok=True)
 
 
 @app.post("/api/vote")
 def vote():
-    """Like (value 1) or dislike (value -1) a question or reply. The same vote again takes it back."""
+    """Like (value 1) a question or reply, or dislike (value -1) a reply. The same vote again takes it back."""
     uid = current_user()
     limit("vote", uid, 30, 60, "You're voting very fast.")
     limit("vote", uid, 300, 86400, "You've reached today's voting limit.")
@@ -1312,6 +1319,8 @@ def vote():
         abort(400, "Unknown post.")
     if type(value) is not int or value not in (1, -1):
         abort(400, "Unknown vote.")
+    if kind == "q" and value == -1:
+        abort(400, "Questions can only be liked.")
     owner_sql = {"q": "SELECT user_id FROM questions WHERE id = ?",
                  "a": "SELECT user_id FROM answers WHERE id = ?"}.get(kind) or abort(400, "Unknown vote type.")
     post = one(owner_sql, (target,)) or abort(404, "Post not found.")
@@ -1327,7 +1336,7 @@ def vote():
                ON CONFLICT (user_id, kind, target_id) DO UPDATE SET value = excluded.value""", key + (value,))
     counts = one("""SELECT COALESCE(SUM(value = 1), 0) AS likes, COALESCE(SUM(value = -1), 0) AS dislikes
                     FROM votes WHERE kind = ? AND target_id = ?""", (kind, target))
-    return jsonify(likes=counts["likes"], dislikes=counts["dislikes"], my_vote=value)
+    return jsonify(likes=counts["likes"], dislikes=0 if kind == "q" else counts["dislikes"], my_vote=value)
 
 
 # ---------- CalcBot (study helper chat) ----------
