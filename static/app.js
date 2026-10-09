@@ -56,7 +56,17 @@ async function api(path, { method = "GET", body } = {}) {
   return data;
 }
 
-function offline() { $("#banner").hidden = false; }
+// True when the site is being run on this computer by whoever is building it, not visited on the web.
+const IS_LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$|\.localhost$/.test(location.hostname);
+
+function offline() {
+  const banner = $("#banner");
+  if (IS_LOCAL && !banner.dataset.dev) {
+    banner.dataset.dev = "1";
+    banner.insertAdjacentHTML("beforeend", " Running the site yourself? Start it with <code>python server.py</code> in its folder.");
+  }
+  banner.hidden = false;
+}
 
 let toastTimer;
 function toast(msg) {
@@ -101,13 +111,18 @@ const isDone = id => ME.done.includes(id);
 async function refreshMe() { ME = await api("/me"); }
 
 // ---------- Static data ----------
-// Creators: [name, description, search queries]
+// Teachers on YouTube: [name, what they're good for, which lessons they cover]. A lesson links
+// only to the ones who teach its topic, and each link opens a YouTube search for that topic.
+const ESSENCE = new Set(["limits", "epsilon-delta", "lhopital", "derivative-definition", "derivative-rules",
+  "product-rule", "chain-rule", "trig-functions", "exponential-functions", "exp-log-derivatives", "implicit",
+  "antiderivatives", "area-under-curves", "ftc", "average-value", "taylor", "de-intro", "vectors"]);
 const CREATORS = [
-  ["Professor Leonard", "Full-length lectures for Calc 1-3", ["Professor Leonard Calculus 1", "Professor Leonard Calculus 3"]],
-  ["3Blue1Brown", "Visual intuition (Essence of Calculus)", ["3Blue1Brown essence of calculus"]],
-  ["The Organic Chemistry Tutor", "Fast worked examples, lots of practice", ["Organic Chemistry Tutor calculus"]],
-  ["Dr. Trefor Bazett", "Clear Calc 3 / vector calculus", ["Trefor Bazett multivariable calculus"]],
-  ["MIT OpenCourseWare", "University lectures", ["MIT OpenCourseWare single variable calculus"]]
+  ["Professor Leonard", "Full-length lectures that assume nothing", () => true],
+  ["The Organic Chemistry Tutor", "Fast worked examples, lots of practice", () => true],
+  ["Khan Academy", "Short videos, one small idea at a time", () => true],
+  ["3Blue1Brown", "Animations that show why it works", l => ESSENCE.has(l.id)],
+  ["Dr. Trefor Bazett", "Clear university-level explanations", l => l.week > 1],
+  ["MIT OpenCourseWare", "Recorded university lectures", l => l.week > 1]
 ];
 
 // Study styles: [name, description, plan steps]
@@ -142,7 +157,7 @@ const FEEDBACK_QUESTIONS = [
 ];
 
 // ---------- Weeks ----------
-// Lessons are grouped by course week (Week 1-12), then "Extra" topics beyond the syllabus.
+// Lessons are grouped by course week (Week 1-12), then "Extra" topics beyond the 12 weeks.
 function units() {
   const byWeek = new Map();
   for (const l of LESSONS) {
@@ -342,12 +357,14 @@ async function route() {
   });
   window.scrollTo(0, 0);
   if (home) {
+    document.title = HOME_TITLE;
     renderLanding();
     return;
   }
   renderSidebar();
   const views = { learn, practice: practicePage, dashboard, formulas, forum, upload, feedback, videos: videosView, watch, admin, account };
   await (views[view] || learn)(arg, params);
+  document.title = pageTitle(view, arg);
   math(V);
   // A quick fade shows the page changed (skipped when motion is turned off).
   if (window.anime && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -355,8 +372,20 @@ async function route() {
   }
 }
 
+// The name in the browser tab, so that several open tabs (and the history) can be told apart.
+const HOME_TITLE = document.title;
+const PAGE_TITLES = { learn: "All lessons", practice: "Practice", dashboard: "My progress", formulas: "Formula sheet",
+  forum: "Q&A forum", upload: "Upload notes", feedback: "Feedback", videos: "Video lessons", watch: "Video lesson",
+  admin: "Moderation", account: "Account" };
+function pageTitle(view, arg) {
+  const lesson = view === "learn" || !PAGE_TITLES[view] ? BY_ID[arg] : null;
+  return (lesson ? lesson.name : PAGE_TITLES[view] || "All lessons") + " - CalcLearners";
+}
+
+// Nothing came back from the server. A visitor is told to try again; whoever is building the
+// site on their own computer is told how to start it.
 function serverMissing() {
-  V.innerHTML = `<h2>Almost there</h2>
+  V.innerHTML = IS_LOCAL ? `<h2>Almost there</h2>
     <div class="card">
       <p>This page needs the CalcLearners server for lessons, quizzes and saving progress.</p>
       <ol>
@@ -365,7 +394,13 @@ function serverMissing() {
         <li>Run <code>python server.py</code> and leave that terminal open.</li>
         <li>Refresh this page (or open <a href="http://localhost:5000">http://localhost:5000</a>).</li>
       </ol>
+    </div>` : `<h2>This page didn't load</h2>
+    <div class="card">
+      <p>We couldn't reach CalcLearners, so there are no lessons to show yet. Check your connection, then try again.</p>
+      <button id="reload" type="button">Try again</button>
     </div>`;
+  const again = $("#reload");
+  if (again) again.onclick = () => location.reload();
 }
 
 function topicOptions(selected, emptyLabel) {
@@ -390,7 +425,7 @@ function badge(level) {
 async function learn(id) {
   if (!LESSONS.length) return serverMissing();
   const l = BY_ID[id];
-  if (!l) return topicPicker();
+  if (!l) return topicPicker(id);
 
   api("/visit", { method: "POST", body: { topic: id } }).then(() => (ME.last_topic = id)).catch(() => {});
   const idx = LESSONS.indexOf(l);
@@ -473,9 +508,9 @@ async function learn(id) {
 
     <section id="s-videos" class="card">
       <h3>7. Watch it explained</h3>
-      <p class="muted">YouTube searches for this exact topic from trusted teachers:</p>
-      <ul class="videos">${CREATORS.map(c =>
-        `<li><a target="_blank" rel="noopener" href="${yt(c[0] + " " + l.name)}">${c[0]}</a> <small>${c[1]}</small></li>`
+      <p class="muted">Prefer a video? Each link searches YouTube for this topic on a channel that teaches it.</p>
+      <ul class="videos">${CREATORS.filter(c => c[2](l)).map(c =>
+        `<li><a target="_blank" rel="noopener" href="${yt(c[0] + " " + l.name)}">${c[0]}<span class="sr-only"> on YouTube, opens in a new tab</span></a> <small>${c[1]}</small></li>`
       ).join("")}</ul>
     </section>
 
@@ -627,11 +662,14 @@ async function finishQuiz(l, correct) {
   } catch (e) { toast("Couldn't save your score: " + e.message); }
 }
 
-function topicPicker() {
+// Every lesson, week by week. `missing` is a lesson address that doesn't exist (an old or mistyped link).
+function topicPicker(missing) {
   const next = recommendNext();
   V.innerHTML = `
-    <h2>Pick a topic</h2>
-    <p>No need to start at the beginning. Jump straight to whatever you're stuck on, using the list or the search box (press <kbd>/</kbd>).</p>
+    <h2>All lessons</h2>
+    ${missing ? `<div class="card prereq" role="status"><b>We couldn't find that lesson.</b> The link may be old or mistyped. Every lesson is listed below.</div>` : ""}
+    <p>New to calculus? Go in order: each lesson builds on the ones before it. Here for one topic from class?
+      Jump straight to it, or search (press <kbd>/</kbd>).</p>
     ${next ? `<div class="card hl">
       <b>Not sure where to start?</b> We suggest <a href="#/learn/${next.id}">${esc(next.name)}</a>
       <small>(${esc(unitLabel(next))}, ${next.prereqs.length ? "you've done its prerequisites" : "no prerequisites needed"})</small>
@@ -834,6 +872,15 @@ const PLAIN_TEXT = 'autocapitalize="none" autocorrect="off" spellcheck="false"';
 // The account links in the header and the phone menu: "Sign in", or "Profile" once you have.
 function updateAccountLinks() {
   $$(".account-entry").forEach(a => { a.textContent = ME.username ? "Profile" : "Sign in"; });
+  updateVideoLinks();
+}
+
+// Video lessons are built from an uploaded PDF by an AI that this copy of the site may not have
+// switched on. Without it the Videos link stays hidden (unless this learner already has
+// lessons), and uploading is named for what it still gives: a study plan.
+function updateVideoLinks() {
+  $$('[data-nav="videos"]').forEach(a => { a.hidden = !(ME.video_ai || ME.has_videos); });
+  $$('a[href="#/upload"]').forEach(a => { a.textContent = ME.video_ai ? "Turn notes into videos" : "Get a study plan from your notes"; });
 }
 
 // Signing in or out changes whose progress every part of the page shows, so the page starts
@@ -1178,7 +1225,7 @@ function formulas() {
   if (!LESSONS.length) return serverMissing();
   V.innerHTML = `
     <h2>Formula sheet</h2>
-    <p>Every key formula from your course, week by week. Click a topic name to open its full lesson.</p>
+    <p>Every key formula from the course, week by week. Click a topic name to open its full lesson.</p>
     <div class="row no-print">
       <input id="fq" type="search" placeholder="Filter, e.g. chain, series, polar, gradient">
       <button class="ghost" id="print">Print / save as PDF</button>
@@ -1452,11 +1499,14 @@ function renderAnswer(a) {
 async function upload() {
   if (!LESSONS.length) return serverMissing();
   const savedStyle = +(store("style") || 0);
+  const videos = !!ME.video_ai;  // the AI that turns a PDF into a video lesson is switched on
 
   V.innerHTML = `
     <h2>Upload your notes</h2>
-    <p>Upload class notes, homework or a practice sheet. PDFs become a <b>video lesson</b>: short animated episodes with
-      voiceover and practice questions. You also get a study plan for the topics it covers.</p>
+    <p>${videos ? `Upload class notes, homework or a practice sheet. PDFs become a <b>video lesson</b>: short animated episodes with
+      voiceover and practice questions. You also get a study plan for the topics it covers.`
+      : `Upload class notes, homework or a practice sheet and get a <b>study plan</b>: the lessons on this site that
+      cover it, and how to work through them.`}</p>
     <div class="card">
       <label class="drop" id="drop">
         <input type="file" id="f" accept=".pdf,.docx,.txt,.doc">
@@ -1468,10 +1518,11 @@ async function upload() {
       <div class="styles">${STYLES.map((s, i) => `
         <label class="style"><input type="radio" name="style" value="${i}" ${i === savedStyle ? "checked" : ""}>
           <b>${s[0]}</b><small>${s[1]}</small></label>`).join("")}</div>
-      <p><small>Before you upload: a PDF may be sent to an AI service (Anthropic, in the United States) to
-        build its lesson. Don't upload files that contain personal information, and only upload notes you're
-        allowed to share. <a href="privacy.html">How we handle uploads</a></small></p>
-      <button id="go">Upload &amp; build my lesson</button>
+      <p><small>Before you upload: ${videos ? `a PDF may be sent to an AI service (Anthropic, in the United States) to
+        build its lesson.` : `the file is read to find the topics it covers.`} Don't upload files that contain
+        personal information, and only upload notes you're allowed to share.
+        <a href="privacy.html">How we handle uploads</a></small></p>
+      <button id="go">${videos ? "Upload &amp; build my lesson" : "Upload &amp; build my study plan"}</button>
       <div id="out" role="status"></div>
     </div>
     <small>Note: research on matching lessons to a single "learning style" is weak, so mixing methods works best.
@@ -1504,7 +1555,7 @@ async function upload() {
       const r = await api("/upload", { method: "POST", body: fd });
       const isPdf = /\.pdf$/i.test(r.filename);
       $("#out").innerHTML = (r.video ? renderVideoResult(r.video, r.style)
-        : isPdf && !r.ai_available ? `<div class="plan"><b>🎬 Want this PDF as animated video episodes?</b>
+        : isPdf && !r.ai_available && IS_LOCAL ? `<div class="plan"><b>🎬 Want this PDF as animated video episodes?</b>
             <p class="muted">Turning new PDFs into videos uses Claude, so it needs an Anthropic API key.
             Set <code>ANTHROPIC_API_KEY</code>, restart <code>python server.py</code> and upload again.
             Meanwhile, here's a study plan:</p></div>` : "")
@@ -1609,7 +1660,9 @@ async function videosView() {
         <div class="chips">${v.episodes.map((e, i) => `<a class="chip ${epDone(v.progress, i) ? "done" : ""}" href="#/watch/${v.id}?ep=${i + 1}">
           ${epDone(v.progress, i) ? "✓ " : ""}${i + 1}. ${esc(e.title)} · ${fmtSecs(e.seconds)}</a>`).join("")}</div>
       </div>`;
-    }).join("") : `<div class="empty">No video lessons yet. <a href="#/upload">Upload a PDF</a> of your class notes to get one.</div>`}`;
+    }).join("") : data.ai_available ? `<div class="empty">No video lessons yet. <a href="#/upload">Upload a PDF</a> of your class notes to get one.</div>`
+      : `<div class="empty">Video lessons aren't available right now. Every topic has a written lesson with worked
+        examples and a quiz: <a href="#/learn">see all lessons</a>.</div>`}`;
   if (data.videos.some(v => v.status === "generating")) {
     pollTimer = setTimeout(() => location.hash === "#/videos" && route(), 5000);
   }
@@ -2082,8 +2135,8 @@ function renderLanding() {
   }
   const course = courseLessons();
   const weekCount = new Set(course.map(l => l.week)).size;
-  $(".lede").textContent = `${course.length} short lessons across your ${weekCount}-week course, from precalc review to tangent planes. ` +
-    "Pick up where you stopped, or jump to the exact topic you're stuck on.";
+  $(".lede").textContent = `${course.length} short lessons in a ${weekCount}-week course, from algebra review to tangent planes. ` +
+    "Start at the beginning, or jump to the exact topic you're stuck on.";
 
   const done = course.filter(l => isDone(l.id)).length;
   const pick = heroLesson();
@@ -2164,7 +2217,7 @@ function showResults() {
   const q = findInput.value.trim();
   if (!q) { findList.hidden = true; findList.innerHTML = ""; return; }
   if (!LESSONS.length) {
-    findList.innerHTML = `<li class="none">Lessons load from the server. Start it with <code>python server.py</code>, then refresh.</li>`;
+    findList.innerHTML = `<li class="none">The lessons haven't loaded. Check your connection, then refresh the page.</li>`;
   } else {
     const hits = searchLessons(q);
     findList.innerHTML = hits.length

@@ -17,6 +17,7 @@ import unicodedata
 from itertools import groupby
 
 import ai
+import video_ai
 from lessons import LESSONS
 
 MAX_CHARS = 1500   # one message from the student
@@ -38,8 +39,11 @@ SITE = [
     (r"\b(formulas?|cheat ?sheet)\b",
      "The [formula sheet](#/formulas) has every formula from the course on one searchable, printable page."),
     (r"\b(videos?|watch|episodes?)\b",
-     "[Video lessons](#/videos) are short animated episodes with voiceover and captions. Each one also has a "
-     "reading version and practice questions from easy to expert."),
+     "[Video lessons](#/videos) are short animated episodes with voiceover and captions, made from a PDF of "
+     "notes you upload. Each one also has a reading version and practice questions from easy to expert."
+     if video_ai.available() else
+     "The site doesn't have its own video lessons right now. Every lesson has a \"Watch it explained\" "
+     "section near the end, with links that search YouTube for that topic on channels that teach it."),
     (r"\b(forum|classmates?|posts?|likes?|dislikes?|report)\b",
      "On the [Q&A forum](#/forum) you can post a question and other learners reply. Likes push the best "
      "questions and replies to the top, and you can sort by most liked, newest, oldest or most replies."),
@@ -48,7 +52,7 @@ SITE = [
      "[course page](#/learn). For more, the [Practice page](#/practice) has extra questions for every week "
      "of the course, each with a worked solution."),
     (r"\b(uploads?|pdf|my notes|own notes)\b",
-     "On [Turn notes into videos](#/upload) you can upload your own notes (PDF, Word or text). The site finds "
+     "On the [upload page](#/upload) you can upload your own notes (PDF, Word or text). The site finds "
      "the lessons they match and builds a study plan around them."),
     (r"\b(dark|light|theme|night mode)\b",
      "The moon or sun button at the top of the page switches between light and dark mode. On a phone it's "
@@ -82,7 +86,7 @@ HELLO = ("I'm CalcBot. Name a topic you're stuck on, like the chain rule or limi
 PAGES = {"home": "the home page", "learn": "the course page", "practice": "the Practice page",
          "videos": "the video lessons page",
          "watch": "a video lesson", "formulas": "the formula sheet", "forum": "the Q&A forum",
-         "dashboard": "the My progress page", "upload": "the Turn notes into videos page",
+         "dashboard": "the My progress page", "upload": "the upload page",
          "feedback": "the feedback page"}
 
 RULES = r"""You are CalcBot, the study helper built into CalcLearners, a free website that teaches a 12-week calculus course (Calc 1 to 3 in one) to high school and university students. You are chatting with one student in a panel beside the page they are studying.

@@ -947,6 +947,8 @@ def me():
                if r["topic_id"] in LESSON_IDS],
         streak=streak(uid),
         chat_pictures=ai.available(),  # only CalcBot's AI can look at a picture
+        video_ai=video_ai.available(),  # new PDFs can be turned into video lessons
+        has_videos=bool(one("SELECT 1 FROM uploads WHERE user_id = ? AND video_id IS NOT NULL LIMIT 1", (uid,))),
     )
 
 

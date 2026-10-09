@@ -37,13 +37,13 @@
       <nav class="nav" id="nav" aria-label="Main">
         <a href="#/learn" data-nav="learn">Course</a>
         <a href="#/practice" data-nav="practice">Practice</a>
-        <a href="#/videos" data-nav="videos">Videos</a>
+        <a href="#/videos" data-nav="videos" hidden>Videos</a>
         <a href="#/formulas" data-nav="formulas">Formulas</a>
         <a href="#/forum" data-nav="forum">Q&amp;A</a>
         <div class="nav-more">
           <a href="#/dashboard" data-nav="dashboard">My progress</a>
           <a class="account-entry" href="#/account" data-nav="account">Sign in</a>
-          <a href="#/upload" data-nav="upload">Turn notes into videos</a>
+          <a href="#/upload" data-nav="upload">Get a study plan from your notes</a>
           <a href="#/feedback" data-nav="feedback">Send feedback</a>
           <button class="theme-toggle theme-row" type="button">
             <svg class="ico-moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
@@ -78,8 +78,7 @@
   </header>
 
   <div id="banner" hidden>
-    Can't reach the CalcLearners server, so lessons and saving won't work.
-    In a terminal inside the <code>calculus website</code> folder, run <code>python server.py</code>, then refresh this page.
+    We can't reach CalcLearners right now, so lessons and saving won't work. Check your connection, then refresh this page.
   </div>
 
   <!-- LANDING PAGE -->
@@ -87,7 +86,7 @@
     <div class="hero wrap">
       <div class="hero-copy">
         <h1>Calculus,<span>one slope at a time.</span></h1>
-        <p class="lede">42 short lessons across your 12-week course, from precalc review to tangent planes. Pick up where you stopped, or jump to the exact topic you're stuck on.</p>
+        <p class="lede">42 short lessons in a 12-week course, from algebra review to tangent planes. Start at the beginning, or jump to the exact topic you're stuck on.</p>
         <div class="hero-actions">
           <a class="btn btn-lg" id="cta-main" href="#/learn">Browse the course</a>
           <p class="resume-note" id="resume-note">No sign-up needed. Your progress saves in this browser.</p>
@@ -128,7 +127,7 @@
       <div class="wrap">
         <div class="section-head">
           <div>
-            <h2 id="course-title">Your 12-week course</h2>
+            <h2 id="course-title">The 12-week course</h2>
             <p>Open any week to see its lessons. Each one has the big idea, a worked example, common mistakes and a quiz.</p>
           </div>
           <div class="legend" aria-hidden="true">
@@ -145,9 +144,9 @@
       <h2 id="tools-title">When a lesson isn't enough</h2>
       <div class="tool-list">
         <div class="tool">
-          <h3>Watch it explained</h3>
-          <p>Animated episodes with voiceover and captions, then 18 practice questions from easy to expert.</p>
-          <a href="#/videos">Browse video lessons</a>
+          <h3>Practice until it sticks</h3>
+          <p>More than 400 questions sorted by week and type, from quick checks to exam level. Every one has a worked solution.</p>
+          <a href="#/practice">Open the practice sets</a>
         </div>
         <div class="tool">
           <h3>Look up a formula</h3>
@@ -203,7 +202,7 @@
       </nav>
       <nav aria-label="More">
         <a href="lessons">All lessons</a>
-        <a href="#/upload">Turn notes into videos</a>
+        <a href="#/upload">Get a study plan from your notes</a>
         <a href="#/feedback">Send feedback</a>
       </nav>
     </div>

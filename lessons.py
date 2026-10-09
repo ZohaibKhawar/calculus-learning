@@ -21,7 +21,7 @@ WEEK_TITLES = {
     10: "Differential Equations",
     11: "Direction Fields, Euler's Method & Multivariable Functions",
     12: "Partial Derivatives & Tangent Planes",
-    EXTRA_WEEK: "Beyond your syllabus",
+    EXTRA_WEEK: "Beyond the 12 weeks",
 }
 
 # Old prerequisite ids that were split or renamed in the 12-week layout.
