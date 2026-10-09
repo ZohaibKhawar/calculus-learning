@@ -825,6 +825,14 @@ section.card { scroll-margin-top: calc(var(--hdr-total) + 72px); }
 .formula { border-top: 1px solid var(--rule); padding: 8px 0 2px; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
 .formula:first-of-type { border-top: 0; }
 .formula small { display: block; }
+/* A formula's parts sit side by side and stack when the screen is narrow (formula.js). */
+.f-row { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 12px 2.2em; margin: 0.6em 0; }
+.f-row .katex-display { margin: 0; }
+.f-part { max-width: 100%; line-height: 2.1; }
+/* One that still doesn't fit scrolls sideways, and fades at the edge to show there is more. */
+.formula.scrolls { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); }
+.formula.scrolls .f-row { justify-content: flex-start; }
+.formula.scrolls .f-part { max-width: none; padding-right: 40px; }
 .katex-display { margin: 0.5em 0; }
 .katex { font-size: 1.1em; }
 

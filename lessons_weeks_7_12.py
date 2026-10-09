@@ -408,7 +408,7 @@ WEEKS_7_12 = [
         r"give better answers (the error shrinks roughly in proportion to \(h\)), at the cost of more steps.",
         [
             ["Euler's method", r"x_{n+1} = x_n + h,\qquad y_{n+1} = y_n + h\,f(x_n, y_n)"],
-            ["Idea", r"\text{follow the tangent line for one step, then recompute the slope}"],
+            ["Idea", r"\text{follow the tangent line for one step,}\quad \text{then recompute the slope}"],
             ["Accuracy", r"\text{error} \approx \text{constant} \times h"],
         ],
         ex(r"Use Euler's method with \(h = 0.1\) to estimate \(y(0.2)\) for \(y' = x + y\), \(y(0) = 1\).",

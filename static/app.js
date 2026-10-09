@@ -318,6 +318,8 @@ document.addEventListener("keydown", e => {
   if (nav.classList.contains("open")) { setMenu(false); menuBtn.focus(); }
   closeTopics(true);
 });
+// A formula that was shrunk to fit, or marked as scrolling, is measured again when the width changes.
+window.addEventListener("resize", debounce(() => Formula.fit(V), 150));
 // Leaving phone width (rotating a tablet, resizing a window) closes both panels.
 matchMedia("(max-width: 860px)").addEventListener?.("change", () => { setMenu(false); closeTopics(false); });
 
@@ -368,6 +370,7 @@ async function route() {
   await (views[view] || learn)(arg, params);
   document.title = pageTitle(view, arg);
   math(V);
+  Formula.fit(V);
   // A quick fade shows the page changed (skipped when motion is turned off).
   if (window.anime && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
     anime({ targets: "#view", opacity: [0, 1], duration: 220, easing: "easeOutQuad" });
@@ -473,7 +476,7 @@ async function learn(id) {
 
     <section id="s-formulas" class="card">
       <h3>2. Key formulas</h3>
-      ${l.formulas.map(([label, tex]) => `<div class="formula"><small>${label}</small>\\[${tex}\\]</div>`).join("")}
+      ${l.formulas.map(([label, tex]) => `<div class="formula"><small>${label}</small>${Formula.row(tex)}</div>`).join("")}
     </section>
 
     <section id="s-example" class="card">
@@ -1279,11 +1282,12 @@ function formulas() {
       return list.length ? `<h3>${esc(u.label)}: ${esc(u.title)}</h3>` + list.map(l => `
         <div class="card fcard">
           <a href="#/learn/${l.id}"><b>${esc(l.name)}</b></a>
-          ${l.formulas.map(([label, tex]) => `<div class="formula"><small>${label}</small>\\[${tex}\\]</div>`).join("")}
+          ${l.formulas.map(([label, tex]) => `<div class="formula"><small>${label}</small>${Formula.row(tex)}</div>`).join("")}
         </div>`).join("") : "";
     }).join("");
     $("#flist").innerHTML = html || `<p class="muted">No formulas match "${esc(f)}".</p>`;
     math($("#flist"));
+    Formula.fit($("#flist"));
   };
   $("#fq").oninput = debounce(draw, 200);
   $("#print").onclick = () => window.print();

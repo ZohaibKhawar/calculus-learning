@@ -624,7 +624,7 @@ WEEKS_1_6 = [
             ["Critical number", r"f'(c) = 0 \text{ or } f'(c) \text{ undefined},\ c \text{ in the domain}"],
             ["Increasing / decreasing", r"f' \gt 0 \Rightarrow f \nearrow,\qquad f' \lt 0 \Rightarrow f \searrow"],
             ["First derivative test", r"f': + \to - \Rightarrow \text{local max},\qquad - \to + \Rightarrow \text{local min}"],
-            [r"Closed interval \([a, b]\)", r"\text{absolute extrema are among } f(a),\ f(b),\ f(\text{critical numbers})"],
+            [r"Closed interval \([a, b]\)", r"\text{the absolute extrema are among}\quad f(a),\ f(b),\ f(\text{critical numbers})"],
         ],
         ex(r"Find and classify the critical points of \(f(x) = x^3 - 3x^2 - 9x + 2\).",
            [r"\(f'(x) = 3x^2 - 6x - 9 = 3(x - 3)(x + 1)\), so the critical numbers are \(x = -1\) and \(x = 3\).",

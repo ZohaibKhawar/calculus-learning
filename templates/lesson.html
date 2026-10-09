@@ -29,7 +29,7 @@
     <section id="s-formulas" class="card">
       <h2>Key formulas</h2>
       {% for label, tex in lesson.formulas %}
-      <div class="formula"><small>{{ label|safe }}</small>\[{{ tex|safe }}\]</div>
+      <div class="formula" data-tex="{{ tex }}"><small>{{ label|safe }}</small><div class="f-row">\[{{ tex|safe }}\]</div></div>
       {% endfor %}
     </section>
 
