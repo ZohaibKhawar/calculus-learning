@@ -1,11 +1,14 @@
 """All CalcLearners lessons, organized by the 12-week course.
 
-Each lesson gets "week" (1-12, or 13 for extras), "unit" (e.g. "Week 3") and
-"unit_title" (e.g. "Derivatives").
+Each lesson gets "week" (1-12, or 13 for extras), "unit" (e.g. "Week 3"),
+"unit_title" (e.g. "Derivatives") and "also" (other things people call the topic,
+which the site's search matches).
 """
+from lesson_words import EVERYDAY
 from lessons_extra import EXTRA_LESSONS
 from lessons_weeks_1_6 import WEEKS_1_6
 from lessons_weeks_7_12 import WEEKS_7_12
+from search_terms import SEARCH
 
 EXTRA_WEEK = 13
 WEEK_TITLES = {
@@ -42,5 +45,6 @@ LESSONS = WEEKS_1_6 + WEEKS_7_12 + [_extra(l) for l in EXTRA_LESSONS]
 for _l in LESSONS:
     _l["unit"] = "Extra" if _l["week"] == EXTRA_WEEK else f"Week {_l['week']}"
     _l["unit_title"] = WEEK_TITLES[_l["week"]]
+    _l["also"] = EVERYDAY.get(_l["id"], []) + SEARCH.get(_l["id"], ("", []))[1]
 
 LESSON_IDS = {l["id"] for l in LESSONS}

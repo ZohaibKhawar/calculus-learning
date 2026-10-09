@@ -188,16 +188,17 @@ function updateProgress() {
 
 // ---------- Sidebar ----------
 function renderSidebar() {
-  const filter = $("#q").value.trim().toLowerCase();
+  const filter = $("#q").value.trim();
   const cur = currentTopicId();
   if (!LESSONS.length) {
-    $("#side").innerHTML = "<small>Topics load from the server.</small>";
+    $("#side").innerHTML = "<small>The lessons haven't loaded. Check your connection, then refresh.</small>";
     return;
   }
+  const found = filter ? new Set(searchLessons(filter, 99)) : null;
   let html = "";
   for (const u of units()) {
     const all = u.lessons;
-    const list = all.filter(l => (l.name + " " + l.keywords + " " + l.unit_title).toLowerCase().includes(filter));
+    const list = found ? all.filter(l => found.has(l)) : all;
     if (!list.length) continue;
     const done = all.filter(l => isDone(l.id)).length;
     html += `<h4>${u.label} <span>${done}/${all.length}</span></h4><div class="unit-sub">${esc(u.title)}</div>` + list.map(l =>
@@ -207,7 +208,8 @@ function renderSidebar() {
     ).join("");
   }
   $("#side").innerHTML = html ||
-    `<small>No topic matches "${esc(filter)}". Try a simpler word like "integral" or "vector".</small>`;
+    `<small>No lesson matches "${esc(filter)}". Try one or two key words, like "integral" or "chain rule", or
+      <button class="link" type="button" data-ask="${esc(filter)}">ask CalcBot</button>.</small>`;
 }
 
 $("#q").addEventListener("input", renderSidebar);
@@ -2201,17 +2203,98 @@ $("#weeks").addEventListener("click", e => {
 // ---------- "What are you stuck on?" search ----------
 const findInput = $("#find"), findList = $("#find-results");
 
-function searchLessons(query) {
-  const q = query.trim().toLowerCase();
-  const words = q.split(/\s+/).filter(Boolean);
-  if (!words.length) return [];
-  return LESSONS.map(l => {
-    const name = l.name.toLowerCase();
-    const hay = (l.name + " " + l.keywords + " " + l.unit_title).toLowerCase();
-    if (!words.every(w => hay.includes(w))) return null;
-    return { l, rank: name.startsWith(q) ? 0 : name.includes(q) ? 1 : 2 };
-  }).filter(Boolean).sort((a, b) => a.rank - b.rank).slice(0, 6).map(x => x.l);
+// Search works on whole words, so "sin" finds the trig lesson and not "increasing". It skips
+// filler words ("how do I find the..."), forgives a typo in a longer word, and knows what
+// beginners call each topic (a lesson's "also" list: "rate of change", "max and min").
+const FILLER = new Set(("a an the of to in on at for and or is are was be do does did i im my me we you your it its this that " +
+  "these those how what whats which why when where can could should would with about into from by as if so than then " +
+  "there here please help need want know dont cant get find mean means meaning explain understand use using").split(" "));
+const tidy = s => String(s).toLowerCase().replace(/['’]/g, "").replace(/[^a-z0-9/^+=]+/g, " ").trim();
+// "derivatives" and "factoring" count as "derivative" and "factor".
+function stem(w) {
+  if (w.length > 3 && w.endsWith("s") && !/(ss|us|is)$/.test(w)) w = w.slice(0, -1);
+  if (w.length > 6 && w.endsWith("ing")) w = w.slice(0, -3);
+  return w;
 }
+// How many single-letter edits turn a into b (stops counting once past `max`).
+function editDistance(a, b, max) {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    let low = i;
+    for (let j = 1; j <= b.length; j++) {
+      next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      low = Math.min(low, next[j]);
+    }
+    if (low > max) return max + 1;
+    row = next;
+  }
+  return row[b.length];
+}
+// How well a typed word matches a word from a lesson: 1 the same, 0.75 its start, 0.5 a likely
+// typo. Typos are only looked for (`typos`) when the typed word isn't a word the site knows.
+function wordMatch(typed, word, typos) {
+  if (typed === word) return 1;
+  if (typed.length >= 3 && word.startsWith(typed)) return 0.75;
+  const slack = typed.length >= 8 ? 2 : 1;
+  if (typos && typed.length >= 5 && typed[0] === word[0] && editDistance(typed, word, slack) <= slack) return 0.5;
+  return 0;
+}
+
+// Other pages a search can land on, besides lessons.
+const SEARCH_PAGES = [
+  { name: "Formula sheet", sub: "Every formula on one page", href: "#/formulas", also: ["formulas", "formula sheet", "cheat sheet", "all formulas"] },
+  { name: "Practice questions", sub: "With worked solutions", href: "#/practice", also: ["practice", "practice problems", "exercises", "worksheets", "exam questions", "midterm", "test prep"] },
+  { name: "Q&A forum", sub: "Ask other learners", href: "#/forum", also: ["forum", "ask a question", "community"] }
+];
+
+let searchIndex = null;
+function buildSearchIndex() {
+  const entry = (item, parts) => {
+    const words = new Map();  // word -> how much a match on it counts
+    for (const [text, weight] of parts) {
+      for (const w of tidy(text).split(" ")) {
+        if (w && !FILLER.has(w)) words.set(stem(w), Math.max(words.get(stem(w)) || 0, weight));
+      }
+    }
+    return { item, words: [...words], phrases: [item.name, ...(item.also || [])].map(tidy).filter(Boolean) };
+  };
+  const entries = [
+    ...LESSONS.map(l => entry(l, [[l.name, 3], [(l.also || []).join(" "), 2], [l.keywords, 2], [l.unit_title, 0.5]])),
+    ...SEARCH_PAGES.map(p => entry(p, [[p.name, 3], [p.also.join(" "), 2]]))
+  ];
+  return { entries, known: [...new Set(entries.flatMap(e => e.words.map(w => w[0])))] };
+}
+
+// The lessons (and pages) that fit what was typed, best first; equally good ones stay in course order.
+function searchSite(query, max = 6) {
+  searchIndex = searchIndex || buildSearchIndex();
+  const typed = tidy(query);
+  const words = typed.split(" ").filter(w => w && !FILLER.has(w)).map(stem);
+  if (!words.length) return [];
+  const typos = words.map(w => !searchIndex.known.some(k => k === w || (w.length >= 3 && k.startsWith(w))));
+  const scored = searchIndex.entries.map((e, order) => {
+    let score = 0, matched = 0;
+    words.forEach((w, i) => {
+      let best = 0;
+      for (const [word, weight] of e.words) best = Math.max(best, wordMatch(w, word, typos[i]) * weight);
+      if (best) { matched++; score += best; }
+    });
+    // The learner's own phrase for the topic counts for more, and a longer phrase for more still.
+    for (const p of e.phrases) {
+      if ((" " + typed + " ").includes(" " + p + " ")) score += 4 + 2 * p.split(" ").length;
+    }
+    return { e, order, score, matched };
+  });
+  // Every word should fit. When no lesson manages that (a long question), the closest ones are shown.
+  let hits = scored.filter(s => s.matched === words.length);
+  if (!hits.length) hits = scored.filter(s => s.score >= 2);
+  hits.sort((a, b) => b.score - a.score || a.order - b.order);
+  // Leave out the ones that only brush against the search next to a clear best match.
+  return hits.filter(s => s.score >= 0.3 * hits[0].score).slice(0, max).map(s => s.e.item);
+}
+const searchLessons = (query, max) => searchSite(query, 99).filter(x => x.id).slice(0, max);
 
 function showResults() {
   const q = findInput.value.trim();
@@ -2219,13 +2302,20 @@ function showResults() {
   if (!LESSONS.length) {
     findList.innerHTML = `<li class="none">The lessons haven't loaded. Check your connection, then refresh the page.</li>`;
   } else {
-    const hits = searchLessons(q);
+    const hits = searchSite(q);
     findList.innerHTML = hits.length
-      ? hits.map(l => `<li><a href="#/learn/${l.id}">${esc(l.name)}<small>${esc(unitLabel(l))}</small></a></li>`).join("")
-      : `<li class="none">No lesson matches "${esc(q)}". Try a shorter word, like "limit", "integral" or "series".</li>`;
+      ? hits.map(x => x.id ? `<li><a href="#/learn/${x.id}">${esc(x.name)}<small>${esc(unitLabel(x))}</small></a></li>`
+        : `<li><a href="${x.href}">${esc(x.name)}<small>${esc(x.sub)}</small></a></li>`).join("")
+      : `<li class="none">No lesson matches "${esc(q)}". Try one or two key words, like "limits" or "chain rule", or
+          <button class="link" type="button" data-ask="${esc(q)}">ask CalcBot</button>.</li>`;
   }
   findList.hidden = false;
 }
+// "Ask CalcBot" under a search with no results hands it the question.
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-ask]");
+  if (b && window.CalcBot) window.CalcBot.ask(b.dataset.ask);
+});
 
 function goFirstResult() {
   showResults();

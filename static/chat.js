@@ -257,6 +257,8 @@
   // On a phone the chat covers the page, so following a link closes it.
   log.addEventListener("click", e => { if (e.target.closest("a") && phone.matches) close(false); });
   panel.addEventListener("keydown", e => { if (e.key === "Escape") { e.stopPropagation(); close(true); } });
+  // Other parts of the page can hand CalcBot a question, as the search does when nothing matches.
+  window.CalcBot = { ask(text) { if (panel.hidden) open(); send(text); } };
   window.visualViewport?.addEventListener("resize", fit);
   window.visualViewport?.addEventListener("scroll", fit);
   phone.addEventListener?.("change", fit);
