@@ -1350,6 +1350,18 @@ function formulas() {
 // ---------- Practice (#/practice/<week>): extra questions for each week, with worked solutions ----------
 let PRACTICE = null;
 
+// After checking an answer the learner marks the question "Got it" or "Not yet". The marks stay
+// in this browser (they are a study aid, not a score): { question key: 1 for got it, 0 for not yet }.
+function practiceMarks() {
+  try { return JSON.parse(store("practice-marks") || "{}") || {}; } catch (e) { return {}; }
+}
+// A short, stable name for a question, made from its text.
+function questionKey(week, text) {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = (h * 33 ^ text.charCodeAt(i)) >>> 0;
+  return week + ":" + h.toString(36);
+}
+
 async function practicePage(arg) {
   if (!LESSONS.length) return serverMissing();
   if (!PRACTICE) {
@@ -1362,19 +1374,22 @@ async function practicePage(arg) {
   const prev = PRACTICE[i - 1], next = PRACTICE[i + 1];
   const count = set.sets.reduce((n, s) => n + s.questions.length, 0);
   const kinds = new Set(set.sets.flatMap(s => s.questions.map(q => q.kind))).size;
-  let n = 0;
+  const marks = practiceMarks();
+  let n = 0, filter = "all";
 
   V.innerHTML = `
     <h2>Practice</h2>
     <p>Questions for every week of the course, sorted by type, each with a worked solution. A set starts with
       quick questions and builds up to midterm level, and every week ends with long exam-style questions.
-      Give each one an honest try on paper before you open the answer.</p>
+      Give each one an honest try on paper before you open the answer, then mark how it went: the ones you
+      mark "Not yet" are kept in a list to retry.</p>
     <nav class="chips week-tabs" aria-label="Weeks">
       ${PRACTICE.map(p => `<a class="chip ${p === set ? "on" : ""}" href="#/practice/${p.week}"
         ${p === set ? 'aria-current="page"' : ""}>Week ${p.week}</a>`).join("")}
     </nav>
     <h3 class="practice-week">Week ${set.week}: ${esc(set.title)}</h3>
     <p class="muted">${plural(count, "question")} covering ${plural(kinds, "type")} of question, grouped by lesson.</p>
+    <div class="practice-tally" id="practice-tally"></div>
     <nav class="jump" aria-label="Question sets">
       ${set.sets.map((s, i) => `<button data-jump="set-${i}"><span>${i + 1}</span>${esc(s.title)}</button>`).join("")}
     </nav>
@@ -1386,8 +1401,8 @@ async function practicePage(arg) {
             ${BY_ID[s.lesson] ? `<a href="#/learn/${s.lesson}">Open the lesson</a>` : ""}
           </div>
           ${s.questions.map(q => `
-            <div class="prob">
-              <div class="prob-kind">${esc(q.kind)}${q.mins ? `<span class="badge">About ${q.mins} min</span>` : ""}</div>
+            <div class="prob" data-key="${questionKey(set.week, q.q)}">
+              <div class="prob-kind">${esc(q.kind)}${q.mins ? `<span class="badge">About ${q.mins} min</span>` : ""}<span class="mark-tag"></span></div>
               <p><b>${++n}.</b> ${q.q}</p>
               <div class="row">
                 <button class="ghost small" data-toggle="ans" aria-expanded="false">Show answer</button>
@@ -1395,8 +1410,14 @@ async function practicePage(arg) {
               </div>
               <div class="box ans" hidden><b>Answer:</b> ${q.a}</div>
               <div class="box sol" hidden><ol class="steps">${q.steps.map(step => `<li>${step}</li>`).join("")}</ol></div>
+              <div class="row self-mark" hidden>
+                <span>How did it go?</span>
+                <button class="ghost small" data-mark="1" aria-pressed="false">Got it</button>
+                <button class="ghost small" data-mark="0" aria-pressed="false">Not yet</button>
+              </div>
             </div>`).join("")}
         </section>`).join("")}
+      <div class="empty" id="practice-none" hidden></div>
     </div>
     <div class="pager">
       ${prev ? `<a class="prev" href="#/practice/${prev.week}"><small>Previous week</small>Week ${prev.week}: ${esc(prev.title)}</a>` : ""}
@@ -1408,14 +1429,75 @@ async function practicePage(arg) {
     if (b) document.getElementById(b.dataset.jump).scrollIntoView({ behavior: "smooth" });
   };
 
+  const probs = $$("#practice-sets .prob");
+  // A question's mark: the tag beside its type, and which of its two buttons is pressed.
+  const paint = prob => {
+    const mark = marks[prob.dataset.key];
+    prob.querySelector(".mark-tag").innerHTML = mark === 1 ? `<span class="badge ok">Got it</span>`
+      : mark === 0 ? `<span class="badge todo">To retry</span>` : "";
+    prob.querySelectorAll("[data-mark]").forEach(b => {
+      const on = +b.dataset.mark === mark;
+      b.setAttribute("aria-pressed", on);
+      b.classList.toggle("ghost", !on);
+    });
+    if (mark !== undefined) prob.querySelector(".self-mark").hidden = false;
+  };
+  // The counts above the questions, which are also buttons that narrow the page to one group.
+  const tally = () => {
+    const got = probs.filter(p => marks[p.dataset.key] === 1).length;
+    const todo = probs.filter(p => marks[p.dataset.key] === 0).length;
+    const groups = [["all", `All ${count}`], ["todo", `To retry ${todo}`], ["new", `Not tried ${count - got - todo}`], ["got", `Got it ${got}`]];
+    $("#practice-tally").innerHTML = `<div class="chips" role="group" aria-label="Show questions">${groups.map(([key, label]) =>
+      `<button class="chip ${key === filter ? "on" : ""}" type="button" data-filter="${key}" aria-pressed="${key === filter}">${label}</button>`).join("")}</div>`;
+    let shown = 0;
+    for (const p of probs) {
+      const mark = marks[p.dataset.key];
+      p.hidden = !(filter === "all" || (filter === "todo" && mark === 0) || (filter === "got" && mark === 1) || (filter === "new" && mark === undefined));
+      if (!p.hidden) shown++;
+    }
+    $$("#practice-sets .practice-set").forEach(s => { s.hidden = !s.querySelector(".prob:not([hidden])"); });
+    const none = $("#practice-none");
+    none.hidden = shown > 0;
+    none.textContent = { todo: "Nothing to retry. Mark a question \"Not yet\" after checking its answer and it will wait for you here.",
+      new: "You've tried every question in this week.", got: "No questions marked \"Got it\" yet." }[filter] || "";
+  };
+  probs.forEach(paint);
+  tally();
+  $("#practice-tally").onclick = e => {
+    const b = e.target.closest("[data-filter]");
+    if (!b) return;
+    filter = b.dataset.filter;
+    tally();
+    $(`#practice-tally [data-filter="${filter}"]`).focus();
+  };
+
   const LABELS = { ans: "answer", sol: "steps" };
   $("#practice-sets").onclick = e => {
+    const marker = e.target.closest("[data-mark]");
+    if (marker) {
+      const prob = marker.closest(".prob"), key = prob.dataset.key, value = +marker.dataset.mark;
+      if (marks[key] === value) delete marks[key]; else marks[key] = value;  // pressing your mark again takes it back
+      store("practice-marks", JSON.stringify(marks));
+      paint(prob);
+      // The counts change at once; the question stays where it is until another group is picked.
+      const keep = filter;
+      filter = "all";
+      tally();
+      filter = keep;
+      $$("#practice-tally [data-filter]").forEach(b => {
+        b.classList.toggle("on", b.dataset.filter === filter);
+        b.setAttribute("aria-pressed", b.dataset.filter === filter);
+      });
+      return;
+    }
     const b = e.target.closest("[data-toggle]");
     if (!b) return;
-    const box = b.closest(".prob").querySelector(".box." + b.dataset.toggle);
+    const prob = b.closest(".prob");
+    const box = prob.querySelector(".box." + b.dataset.toggle);
     box.hidden = !box.hidden;
     b.setAttribute("aria-expanded", !box.hidden);
     b.textContent = (box.hidden ? "Show " : "Hide ") + LABELS[b.dataset.toggle];
+    if (!box.hidden) prob.querySelector(".self-mark").hidden = false;  // once checked, it can be marked
   };
 }
 

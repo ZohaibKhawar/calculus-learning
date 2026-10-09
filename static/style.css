@@ -921,6 +921,13 @@ section.card { scroll-margin-top: calc(var(--hdr-total) + 72px); }
 .practice-set .row.between { align-items: baseline; margin-bottom: 12px; }
 .practice-set h3 { margin-bottom: 0; }
 .prob-kind { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-bottom: 4px; color: var(--graphite); font-size: 13px; font-weight: 700; }
+/* Marking a practice question after checking it, and the counts that filter the page. */
+.practice-tally { margin: 4px 0 6px; }
+.practice-tally .chip { border: 0; margin: 0; font-weight: 400; font-variant-numeric: tabular-nums; cursor: pointer; }
+.self-mark { margin-top: 10px; }
+.self-mark span { color: var(--graphite); font-size: 15px; }
+.self-mark button { margin: 0; }
+.badge.todo { border-color: var(--warn); color: var(--warn); }
 
 .qq { border-top: 1px solid var(--rule); padding: 14px 0; }
 .choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 8px; }
