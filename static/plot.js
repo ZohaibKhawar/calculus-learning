@@ -251,7 +251,9 @@ window.Plot = (function () {
       const { t, f } = ui;
       const [a, b] = t.dom || [ui.x0, ui.x1];
       const template = t.read || (withTangent ? "At x = {x} the height is {y} and the slope is {m}." : "x = {x}, y = {y}");
-      const step = (b - a) / 400;
+      // A round step (0.01, 0.02, 0.05 ...) so that the readout lands on round numbers.
+      const raw = (b - a) / 300, unit = Math.pow(10, Math.floor(Math.log10(raw)));
+      const step = [1, 2, 5, 10].map(m => m * unit).find(v => v >= raw);
       const input = ui.slider(t.label || "x", a, b, t.start ?? (a + b) / 2, step, show);
       function show(x) {
         x = clamp(x, a, b);

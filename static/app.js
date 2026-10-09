@@ -354,7 +354,7 @@ async function route() {
   $("#app").hidden = home;
   setMenu(false);
   closeTopics(false);
-  const navView = view === "watch" ? "videos" : view;
+  const navView = { watch: "videos", learn: "path", skip: "path" }[view] || view;
   $$("[data-nav]").forEach(a => {
     if (a.dataset.nav === navView) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
@@ -367,7 +367,7 @@ async function route() {
   }
   renderSidebar();
   const views = { learn, practice: practicePage, dashboard, formulas, forum, upload, feedback, videos: videosView, watch, admin, account,
-    symbols: symbolsPage };
+    symbols: symbolsPage, path: pathView, skip: skipTest, start: startPage };
   await (views[view] || learn)(arg, params);
   document.title = pageTitle(view, arg);
   math(V);
@@ -382,7 +382,8 @@ async function route() {
 const HOME_TITLE = document.title;
 const PAGE_TITLES = { learn: "All lessons", practice: "Practice", dashboard: "My progress", formulas: "Formula sheet",
   forum: "Q&A forum", upload: "Upload notes", feedback: "Feedback", videos: "Video lessons", watch: "Video lesson",
-  admin: "Moderation", account: "Account", symbols: "How to read the symbols" };
+  admin: "Moderation", account: "Account", symbols: "How to read the symbols", path: "Roadmap", skip: "Skip test",
+  start: "Start here" };
 function pageTitle(view, arg) {
   const lesson = view === "learn" || !PAGE_TITLES[view] ? BY_ID[arg] : null;
   return (lesson ? lesson.name : PAGE_TITLES[view] || "All lessons") + " - CalcLearners";
@@ -459,7 +460,7 @@ async function learn(id) {
     </div>`).join("");
 
   V.innerHTML = `
-    <div class="crumbs"><span>${esc(unitLabel(l))}</span>${badge(l.level)}<span>About ${l.minutes} min</span></div>
+    <div class="crumbs"><a href="#/path">Roadmap</a><span>${esc(unitLabel(l))}</span>${badge(l.level)}<span>About ${l.minutes} min</span></div>
     <h2>${esc(l.name)}</h2>
     <div class="row lesson-actions">
       <button id="done-btn"></button>
@@ -748,8 +749,9 @@ async function finishQuiz(l, correct) {
     } catch (e) { toast("Couldn't save your progress: " + e.message); return; }
   }
   const next = recommendNext();
-  if (next && $("#quiz-next")) {
-    $("#quiz-next").insertAdjacentHTML("beforeend", `<a class="btn" href="#/learn/${next.id}">Next: ${esc(next.name)}</a>`);
+  if ($("#quiz-next")) {
+    $("#quiz-next").insertAdjacentHTML("beforeend", (next ? `<a class="btn" href="#/learn/${next.id}">Next: ${esc(next.name)}</a>` : "")
+      + `<a class="btn ghost" href="#/path">See the roadmap</a>`);
   }
   if (firstPass) toast(next ? `Lesson complete ✓ Up next: ${next.name}` : "You've finished every lesson! 🎉");
 }
@@ -760,8 +762,8 @@ function topicPicker(missing) {
   V.innerHTML = `
     <h2>All lessons</h2>
     ${missing ? `<div class="card prereq" role="status"><b>We couldn't find that lesson.</b> The link may be old or mistyped. Every lesson is listed below.</div>` : ""}
-    <p>New to calculus? Go in order: each lesson builds on the ones before it. Here for one topic from class?
-      Jump straight to it, or search (press <kbd>/</kbd>).</p>
+    <p>New to calculus? Follow the <a href="#/path">roadmap</a>: each lesson builds on the ones before it. Here for
+      one topic from class? Jump straight to it, or search (press <kbd>/</kbd>).</p>
     ${next ? `<div class="card hl">
       <b>Not sure where to start?</b> We suggest <a href="#/learn/${next.id}">${esc(next.name)}</a>
       <small>(${esc(unitLabel(next))}, ${next.prereqs.length ? "you've done its prerequisites" : "no prerequisites needed"})</small>
@@ -2225,8 +2227,8 @@ function heroLesson() {
 function renderLanding() {
   const cta = $("#cta-main"), note = $("#resume-note");
   if (!LESSONS.length) {
-    cta.href = "#/learn";
-    cta.textContent = "Browse the course";
+    cta.href = "#/start";
+    cta.textContent = "Start here";
     note.textContent = "No sign-up needed. Your progress saves in this browser.";
     return;
   }
@@ -2237,7 +2239,14 @@ function renderLanding() {
 
   const done = course.filter(l => isDone(l.id)).length;
   const pick = heroLesson();
-  if (pick) {
+  // Someone who hasn't touched anything yet is sent to the page that explains what calculus is.
+  const brandNew = !ME.done.length && !ME.last_topic && !Object.keys(ME.quiz).length;
+  if (brandNew) {
+    cta.href = "#/start";
+    cta.textContent = "Start here";
+    note.innerHTML = "New to calculus? See what it is and how the site works, in five minutes. " +
+      (ME.username ? `Signed in as <b>${esc(ME.username)}</b>.` : "No sign-up needed.");
+  } else if (pick) {
     const l = pick.lesson;
     cta.href = "#/learn/" + l.id;
     cta.innerHTML = `${pick.resume ? "Continue" : done ? "Up next" : "Start"}: ${esc(l.name)}
@@ -2347,7 +2356,9 @@ const SEARCH_PAGES = [
   { name: "Formula sheet", sub: "Every formula on one page", href: "#/formulas", also: ["formulas", "formula sheet", "cheat sheet", "all formulas"] },
   { name: "Practice questions", sub: "With worked solutions", href: "#/practice", also: ["practice", "practice problems", "exercises", "worksheets", "exam questions", "midterm", "test prep"] },
   { name: "Q&A forum", sub: "Ask other learners", href: "#/forum", also: ["forum", "ask a question", "community"] },
-  { name: "How to read the symbols", sub: "Notation, said out loud", href: "#/symbols", also: ["symbols", "notation", "math symbols", "what does this symbol mean"] }
+  { name: "How to read the symbols", sub: "Notation, said out loud", href: "#/symbols", also: ["symbols", "notation", "math symbols", "what does this symbol mean"] },
+  { name: "Start here", sub: "What calculus is, and how to begin", href: "#/start", also: ["what is calculus", "whats calculus", "new to calculus", "where do i start", "beginner", "basics", "introduction", "getting started", "calculus"] },
+  { name: "Roadmap", sub: "The course as a path, lesson by lesson", href: "#/path", also: ["roadmap", "path", "course", "syllabus", "what order", "what comes next", "all lessons"] }
 ];
 
 let searchIndex = null;
