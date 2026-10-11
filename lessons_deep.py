@@ -12,7 +12,9 @@ worked example. That is enough to revise from and not enough to learn from. DEEP
   "quiz"      extra quiz questions, added after the lesson's own.
 
 lessons.py merges all of this into the lessons. Weeks 2 and 3 (limits and the first derivatives)
-are written out in full, because that is where calculus starts and where beginners get lost.
+are written out in full, because that is where calculus starts and where beginners get lost. So
+are the rules a midterm leans on: the quotient rule, the derivatives of e^x and a^x, the chain
+rule, implicit differentiation, the Fundamental Theorem and substitution.
 Other lessons have a picture where the topic is one.
 """
 from lesson_helpers import ex, mc
@@ -552,6 +554,399 @@ DEEP = {
                r"\(1 \cdot x^4 + x \cdot 4x^3 = 5x^4\), which matches the power rule on \(x^5\)."),
         ],
     },
+    # ============================ WEEK 4: QUOTIENT RULE, DERIVATIVES OF e^x AND a^x ============================
+    "quotient-rule": {
+        "learn": [
+            block("Why you can't just divide the derivatives",
+                  r"""<p>Test the tempting shortcut on something you can check. \(\dfrac{x^5}{x^2}\) is \(x^3\), so its true
+                  derivative is \(3x^2\). Dividing the two derivatives gives \(\dfrac{5x^4}{2x} = \dfrac52x^3\). Wrong
+                  power, wrong number. Like a product, a fraction needs a rule of its own.</p>"""),
+            block("The rule, and a way to say it",
+                  r"""<p>Call the top \(f\) and the bottom \(g\). Then</p>
+                  \[\left(\frac fg\right)' = \frac{f'g - fg'}{g^2}\]
+                  <p>Many people remember it as <b>"low d-high minus high d-low, over low squared"</b>: the bottom times
+                  the derivative of the top, minus the top times the derivative of the bottom, all over the bottom
+                  squared.</p>
+                  <p>The order on top matters, because of the minus sign. It always starts with the derivative of the
+                  <b>top</b>. Swap the two halves and every answer comes out with the wrong sign.</p>
+                  <ol><li>Write down \(f\), \(g\), \(f'\) and \(g'\) before anything else.</li>
+                  <li>Assemble \(f'g - fg'\) on top, with brackets around each piece.</li>
+                  <li>Put \(g^2\) underneath. Leave it squared: there is no need to expand it.</li>
+                  <li>Tidy up the top.</li></ol>""",
+                  {"view": [-5, 5, -0.8, 0.8], "alt": "The curve x over x squared plus 1, with a tangent line you can slide along it",
+                   "curves": [{"f": "x/(x^2+1)"}],
+                   "tool": {"type": "tangent", "start": 0, "read": "At x = {x} the slope is {m}."}},
+                  r"This is \(y = \dfrac{x}{x^2 + 1}\). The quotient rule gives \(y' = \dfrac{1 - x^2}{(x^2 + 1)^2}\). Slide to \(x = 1\) and \(x = -1\): the tangent goes flat exactly where \(1 - x^2 = 0\)."),
+            block("When you don't need it",
+                  r"""<ul><li><b>A number on the bottom.</b> \(\dfrac{x^3 + 2x}{5}\) is just \(\frac15(x^3 + 2x)\). The
+                  \(\frac15\) waits outside: \(\frac15(3x^2 + 2)\).</li>
+                  <li><b>A single power of \(x\) on the bottom.</b> Split the fraction first:
+                  \(\dfrac{x^2 + 1}{x} = x + x^{-1}\), and the power rule gives \(1 - x^{-2}\).</li>
+                  <li><b>A number on top.</b> The rule shrinks to \(\left(\dfrac cg\right)' = -\dfrac{c\,g'}{g^2}\), because
+                  the derivative of the top is 0.</li></ul>
+                  <p>The quotient rule always works. These are just faster when they apply.</p>"""),
+        ],
+        "examples": [
+            ex(r"Differentiate \(y = \dfrac{2x + 1}{x + 3}\).",
+               [r"Top: \(f = 2x + 1\), so \(f' = 2\). Bottom: \(g = x + 3\), so \(g' = 1\).",
+                r"Assemble \(\dfrac{f'g - fg'}{g^2}\): \(\dfrac{2(x + 3) - (2x + 1)(1)}{(x + 3)^2}\).",
+                r"Tidy the top: \(2x + 6 - 2x - 1 = 5\)."],
+               r"\(y' = \dfrac{5}{(x + 3)^2}\)"),
+            "main",
+            ex(r"Find the slope of \(y = \dfrac{x^2}{x + 1}\) at \(x = 1\).",
+               [r"Top: \(f = x^2\), \(f' = 2x\). Bottom: \(g = x + 1\), \(g' = 1\).",
+                r"\(y' = \dfrac{2x(x + 1) - x^2(1)}{(x + 1)^2} = \dfrac{x^2 + 2x}{(x + 1)^2}\).",
+                r"Substitute \(x = 1\): \(\dfrac{1 + 2}{2^2}\)."],
+               r"The slope at \(x = 1\) is \(\frac34\)"),
+        ],
+        "steps": {
+            0: [r"Top: \(f = x\), \(f' = 1\). Bottom: \(g = x + 1\), \(g' = 1\).",
+                r"\(\dfrac{f'g - fg'}{g^2} = \dfrac{1(x + 1) - x(1)}{(x + 1)^2}\).",
+                r"The top is \(x + 1 - x = 1\), so the answer is \(\dfrac{1}{(x + 1)^2}\)."],
+            1: [r"Top: \(f = \sin x\), \(f' = \cos x\). Bottom: \(g = x\), \(g' = 1\).",
+                r"\(\dfrac{f'g - fg'}{g^2} = \dfrac{\cos x \cdot x - \sin x \cdot 1}{x^2}\).",
+                r"Write it neatly: \(\dfrac{x\cos x - \sin x}{x^2}\)."],
+            2: [r"The top is the constant 3, so \(f' = 0\). Bottom: \(g = x^2 + 1\), \(g' = 2x\).",
+                r"\(\dfrac{0\cdot(x^2 + 1) - 3\cdot 2x}{(x^2 + 1)^2}\).",
+                r"Only the second piece survives: \(-\dfrac{6x}{(x^2 + 1)^2}\)."],
+        },
+        "quiz": [
+            mc(r"The top of the quotient rule is \(f'g - fg'\). Which piece comes first?", ["the top times the bottom", "the derivative of the top, times the bottom", "the two derivatives multiplied", "the bottom squared"], 1,
+               "It starts with the derivative of the top, times the bottom."),
+            mc(r"\(\dfrac{d}{dx}\dfrac{x + 1}{x - 1} =\)", [r"\(\dfrac{2}{(x - 1)^2}\)", r"\(-\dfrac{2}{(x - 1)^2}\)", "1", r"\(-\dfrac{2}{x - 1}\)"], 1,
+               r"\(\dfrac{1(x - 1) - (x + 1)(1)}{(x - 1)^2}\), and the top is \(-2\)."),
+        ],
+    },
+    "exp-derivatives": {
+        "learn": [
+            block("What makes e special",
+                  r"""<p>Every exponential curve has the same habit: the higher it is, the steeper it is. For \(2^x\) the
+                  slope at any point is about \(0.693\) times the height there. For \(3^x\) it is about \(1.099\) times
+                  the height.</p>
+                  <p>One multiplier is below 1 and the other is above it. So somewhere between 2 and 3 there is a base
+                  whose multiplier is <b>exactly 1</b>, where the slope simply equals the height. That base is
+                  \(e \approx 2.718\), and it is why</p>
+                  \[\frac{d}{dx}e^x = e^x\]
+                  <p>\(e^x\) is the one function (apart from multiples of itself) that is its own derivative.</p>""",
+                  {"view": [-3, 2.5, -0.5, 8], "alt": "The curve y equals e to the x with a tangent line you can slide along it",
+                   "curves": [{"f": "exp(x)"}],
+                   "tool": {"type": "tangent", "start": 1, "read": "At x = {x} the height is {y} and the slope is {m}: the same number."}},
+                  r"For \(e^x\) the slope at every point equals the height there. That is all \(\frac{d}{dx}e^x = e^x\) says."),
+            block(r"Every other base picks up \(\ln a\)",
+                  r"""<p>Those multipliers have a name. The multiplier for base \(a\) is \(\ln a\), the <b>natural
+                  logarithm</b> of \(a\):</p>
+                  \[\frac{d}{dx}a^x = a^x\ln a\]
+                  <p>Logarithms get a lesson of their own in Week 5. For now \(\ln a\) is just a number, the one the
+                  <b>ln</b> key on a calculator gives: \(\ln 2 \approx 0.693\), \(\ln 3 \approx 1.099\), and
+                  \(\ln e = 1\). Because it is a constant, it sits in front like any other constant.</p>"""),
+            block("Power or exponential? Look at where the x is",
+                  r"""<ul><li>\(x^3\) has the \(x\) in the <b>base</b>. It is a power: bring the 3 down, \(3x^2\).</li>
+                  <li>\(3^x\) has the \(x\) in the <b>exponent</b>. It is an exponential: it keeps its shape and gains
+                  \(\ln 3\), giving \(3^x\ln 3\).</li>
+                  <li>\(e^2\) has no \(x\) at all. It is a number, about 7.39, and its derivative is 0.</li></ul>
+                  <p>This week the exponent is always a plain \(x\). Exponents like \(e^{3x}\) or \(2^{x^2}\) need the
+                  chain rule, which comes in Week 5.</p>"""),
+        ],
+        "examples": [
+            ex(r"Differentiate \(f(x) = 5e^x + x^2\).",
+               [r"Term by term. The 5 waits outside while \(e^x\) stays as it is: \(5e^x\).",
+                r"\(x^2\) is a power: \(2x\)."],
+               r"\(f'(x) = 5e^x + 2x\)"),
+            "main",
+            ex(r"Find the equation of the tangent line to \(y = e^x\) at \(x = 0\).",
+               [r"The point: \(y(0) = e^0 = 1\), so the line touches the curve at \((0, 1)\).",
+                r"The slope: \(y' = e^x\), so \(y'(0) = 1\) as well.",
+                r"Point-slope form: \(y - 1 = 1(x - 0)\)."],
+               r"\(y = x + 1\)"),
+        ],
+        "steps": {
+            0: [r"\(3e^x\): the 3 waits outside and \(e^x\) is its own derivative, giving \(3e^x\).",
+                r"\(-4x^2\): the power rule gives \(-8x\)."],
+            1: [r"The \(x\) is in the exponent, so this is an exponential with base \(a = 2\).",
+                r"Use \(\dfrac{d}{dx}a^x = a^x\ln a\): \(2^x\ln 2\)."],
+            2: [r"Top: \(f = e^x\), \(f' = e^x\). Bottom: \(g = x\), \(g' = 1\).",
+                r"Quotient rule: \(\dfrac{e^x\cdot x - e^x\cdot 1}{x^2}\).",
+                r"Factor \(e^x\) out of the top: \(\dfrac{e^x(x - 1)}{x^2}\)."],
+        },
+        "quiz": [
+            mc(r"\(\dfrac{d}{dx}\left(e^x + e^2\right) =\)", [r"\(e^x + e^2\)", r"\(e^x + 2e\)", r"\(e^x\)", r"\(xe^{x-1}\)"], 2,
+               r"\(e^2\) has no \(x\) in it. It is a constant, so it contributes 0."),
+            mc(r"The slope of \(y = 10^x\) at \(x = 0\) is:", ["0", "1", r"\(\ln 10\)", "10"], 2,
+               r"\(y' = 10^x\ln 10\), and \(10^0 = 1\)."),
+        ],
+    },
+
+    # ============================ WEEK 5: CHAIN RULE, IMPLICIT DIFFERENTIATION ============================
+    "chain-rule": {
+        "learn": [
+            block("Spot a function inside a function",
+                  r"""<p>In \((3x^2 + 1)^5\) there are two jobs. First work out \(3x^2 + 1\), then raise the result to the
+                  fifth power. The first job is the <b>inside</b> function and the second is the <b>outside</b> one.</p>
+                  <ul><li>\(\sin(4x)\): inside \(4x\), outside the sine.</li>
+                  <li>\(\sqrt{x^2 + 1}\): inside \(x^2 + 1\), outside the square root.</li>
+                  <li>\(\cos^3x\), which means \((\cos x)^3\): inside \(\cos x\), outside the cube.</li></ul>
+                  <p>A quick test: imagine working it out on a calculator for some \(x\). The <b>last</b> button you
+                  press is the outside function.</p>"""),
+            block("Why you multiply",
+                  r"""<p>Rates multiply. If you walk twice as fast as a friend, and the friend walks three times as fast as
+                  a tortoise, you are going \(2 \times 3 = 6\) times as fast as the tortoise.</p>
+                  <p>A function inside a function is the same chain: \(x\) drives the inside, and the inside drives the
+                  outside. So the rate of the whole thing is the outside's rate times the inside's rate:</p>
+                  \[\frac{dy}{dx} = \frac{dy}{du}\cdot\frac{du}{dx}\]
+                  <p>Here \(u\) stands for the inside function.</p>""",
+                  {"view": [-0.5, 6.5, -1.6, 1.6], "alt": "The curve sine of 2x with a tangent line you can slide along it, and the curve sine of x dashed",
+                   "curves": [{"f": "sin(2*x)"}, {"f": "sin(x)", "style": "dash"}],
+                   "tool": {"type": "tangent", "start": 0, "read": "At x = {x} the slope of sin(2x) is {m}."}},
+                  r"The dashed curve is \(\sin x\) and the solid one is \(\sin(2x)\). The inside \(2x\) runs twice as fast, so the wave is squeezed and every slope is doubled. At \(x = 0\) the slope is 2, not 1: that extra 2 is the derivative of the inside."),
+            block("The method: outside, keep the inside, times the inside's derivative",
+                  r"""<ol><li>Name the inside function.</li>
+                  <li>Differentiate the <b>outside</b>, and leave the inside sitting in it untouched.</li>
+                  <li>Multiply by the derivative of the <b>inside</b>.</li></ol>
+                  <p>For \((3x^2 + 1)^5\): the fifth power on the outside becomes \(5(3x^2 + 1)^4\), with the inside
+                  left alone, and the inside's derivative is \(6x\). Together: \(5(3x^2 + 1)^4 \cdot 6x\).</p>
+                  <p>With three layers, keep going inward: one factor for each layer. And from here on the chain rule
+                  is everywhere. Whenever the thing inside a power, a root, a sine, an exponential or a logarithm is
+                  more than a plain \(x\), you need it.</p>"""),
+        ],
+        "examples": [
+            ex(r"Differentiate \(y = (2x + 3)^2\) with the chain rule, then check by expanding.",
+               [r"Inside: \(2x + 3\), with derivative 2. Outside: the square, whose derivative is 2 times what is inside.",
+                r"Chain rule: \(2(2x + 3)\cdot 2 = 4(2x + 3) = 8x + 12\).",
+                r"Check: expanding first gives \(4x^2 + 12x + 9\), and the power rule gives \(8x + 12\). The same. ✓"],
+               r"\(y' = 8x + 12\)"),
+            "main",
+            ex(r"Differentiate \(y = \sin^2(3x)\).",
+               [r"Rewrite it so the layers show: \(y = \big(\sin(3x)\big)^2\). There are three: the square, the sine, and \(3x\).",
+                r"Outermost, the square: \(2\sin(3x)\), times the derivative of what is inside it.",
+                r"Next, the sine: \(\cos(3x)\), times the derivative of what is inside it.",
+                r"Innermost: \(3x\) has derivative 3. Multiply all three factors."],
+               r"\(y' = 6\sin(3x)\cos(3x)\)"),
+        ],
+        "steps": {
+            0: [r"Write the root as a power: \((x^2 + 1)^{1/2}\). Inside: \(x^2 + 1\), with derivative \(2x\).",
+                r"Outside: the power \(\frac12\) comes down and drops by one, giving \(\frac12(x^2 + 1)^{-1/2}\).",
+                r"Multiply by the inside's derivative: \(\frac12(x^2 + 1)^{-1/2}\cdot 2x = \dfrac{x}{\sqrt{x^2 + 1}}\)."],
+            1: [r"Inside: \(4x\), with derivative 4. Outside: sine, which becomes cosine.",
+                r"\(\cos(4x)\cdot 4 = 4\cos(4x)\)."],
+            2: [r"\(\cos^3x\) means \((\cos x)^3\). Inside: \(\cos x\), with derivative \(-\sin x\).",
+                r"Outside: the cube. The 3 comes down and the power drops to 2, giving \(3\cos^2x\).",
+                r"Multiply: \(3\cos^2x\cdot(-\sin x) = -3\cos^2x\sin x\)."],
+        },
+        "quiz": [
+            mc(r"In \(\cos(x^3)\), the inside function is:", [r"\(\cos\)", r"\(x^3\)", r"\(3x^2\)", r"\(\cos x\)"], 1,
+               r"You work out \(x^3\) first, then take its cosine."),
+            mc(r"\(\dfrac{d}{dx}\sqrt{4x + 1} =\)", [r"\(\dfrac{1}{2\sqrt{4x + 1}}\)", r"\(\dfrac{2}{\sqrt{4x + 1}}\)", r"\(4\sqrt{4x + 1}\)", r"\(2\sqrt{4x + 1}\)"], 1,
+               r"\(\frac12(4x + 1)^{-1/2}\cdot 4\)."),
+        ],
+    },
+    "implicit": {
+        "learn": [
+            block("When y won't come out on its own",
+                  r"""<p>So far every function has been handed to you as \(y = \ldots\). Some curves aren't. The circle
+                  \(x^2 + y^2 = 25\) mixes \(x\) and \(y\) together. Solving for \(y\) gives two answers,
+                  \(y = \pm\sqrt{25 - x^2}\), and for a curve like \(x^3 + y^3 = 6xy\) you can't solve for \(y\) in any
+                  useful way.</p>
+                  <p>The curve still has a slope at each point. <b>Implicit differentiation</b> finds it without ever
+                  solving for \(y\).</p>""",
+                  {"view": [-8, 8, -6.5, 6.5], "alt": "A circle of radius 5 with the tangent line at the point 3, 4",
+                   "curves": [{"f": "sqrt(25-x^2)", "dom": [-5, 5]}, {"f": "-sqrt(25-x^2)", "dom": [-5, 5]}],
+                   "segments": [{"from": [-0.2, 6.4], "to": [6.2, 1.6], "style": "hi"}],
+                   "points": [{"at": [3, 4], "label": "(3, 4)", "pos": "sw"}]},
+                  r"The circle \(x^2 + y^2 = 25\) is not the graph of one function, and it still has a tangent at \((3, 4)\). The worked example finds its slope: \(-\frac34\)."),
+            block("The one idea: y is a function of x",
+                  r"""<p>Treat \(y\) as a function of \(x\) whose formula you don't know. Then anything built from \(y\) is a
+                  function inside a function, and the chain rule applies with \(y\) as the inside:</p>
+                  <ul><li>\(\dfrac{d}{dx}\,x^2 = 2x\), as always.</li>
+                  <li>\(\dfrac{d}{dx}\,y^2 = 2y\cdot\dfrac{dy}{dx}\). The outside gives \(2y\), and the inside's derivative
+                  is \(\dfrac{dy}{dx}\).</li>
+                  <li>\(\dfrac{d}{dx}\,\sin y = \cos y\cdot\dfrac{dy}{dx}\).</li>
+                  <li>\(\dfrac{d}{dx}\,(xy) = y + x\dfrac{dy}{dx}\), by the product rule.</li></ul>
+                  <p>The rule of thumb: differentiate a \(y\) term the way you would an \(x\) term, then attach
+                  \(\dfrac{dy}{dx}\).</p>"""),
+            block("The four steps",
+                  r"""<ol><li>Differentiate <b>both sides</b> of the equation with respect to \(x\).</li>
+                  <li>Attach \(\dfrac{dy}{dx}\) every time you differentiate something with \(y\) in it.</li>
+                  <li>Move every term with \(\dfrac{dy}{dx}\) to one side and everything else to the other.</li>
+                  <li>Factor out \(\dfrac{dy}{dx}\) and divide.</li></ol>
+                  <p>The answer usually has both \(x\) and \(y\) in it. That is normal: to get a slope you need both
+                  coordinates of the point.</p>"""),
+        ],
+        "examples": [
+            ex(r"Find \(\dfrac{dy}{dx}\) if \(x^2 + y^3 = 10\).",
+               [r"Differentiate both sides. \(x^2\) gives \(2x\). \(y^3\) gives \(3y^2\dfrac{dy}{dx}\). The constant 10 gives 0.",
+                r"So \(2x + 3y^2\dfrac{dy}{dx} = 0\).",
+                r"Move the \(2x\) across: \(3y^2\dfrac{dy}{dx} = -2x\). Divide by \(3y^2\)."],
+               r"\(\dfrac{dy}{dx} = -\dfrac{2x}{3y^2}\)"),
+            "main",
+            ex(r"Find the tangent line to \(x^2 + xy + y^2 = 7\) at the point \((1, 2)\).",
+               [r"Check the point is on the curve: \(1 + 2 + 4 = 7\). ✓",
+                r"Differentiate both sides. \(xy\) needs the product rule: \(2x + \left(y + x\dfrac{dy}{dx}\right) + 2y\dfrac{dy}{dx} = 0\).",
+                r"Collect the \(\dfrac{dy}{dx}\) terms: \((x + 2y)\dfrac{dy}{dx} = -(2x + y)\), so \(\dfrac{dy}{dx} = -\dfrac{2x + y}{x + 2y}\).",
+                r"At \((1, 2)\): \(-\dfrac{2 + 2}{1 + 4} = -\dfrac45\).",
+                r"Point-slope form: \(y - 2 = -\frac45(x - 1)\)."],
+               r"\(y = -\frac45x + \frac{14}{5}\)"),
+        ],
+        "steps": {
+            0: [r"Differentiate both sides. Left: \(3x^2 + 3y^2y'\). Right, by the product rule: \(6y + 6xy'\).",
+                r"Put the \(y'\) terms on the left and the rest on the right: \(3y^2y' - 6xy' = 6y - 3x^2\).",
+                r"Factor: \(y'(3y^2 - 6x) = 6y - 3x^2\).",
+                r"Divide, and cancel the 3: \(y' = \dfrac{2y - x^2}{y^2 - 2x}\)."],
+            1: [r"Left side: \(\sin y\) has \(y\) inside, so it gives \(\cos y\cdot y'\). Right side: \(x\) gives 1.",
+                r"\(\cos y\cdot y' = 1\), so \(y' = \dfrac{1}{\cos y}\)."],
+        },
+        "quiz": [
+            mc(r"\(\dfrac{d}{dx}\left[xy\right] =\)", [r"\(y\)", r"\(x\dfrac{dy}{dx}\)", r"\(y + x\dfrac{dy}{dx}\)", r"\(\dfrac{dy}{dx}\)"], 2,
+               r"Product rule: the derivative of \(x\) times \(y\), plus \(x\) times the derivative of \(y\)."),
+            mc(r"On the circle \(x^2 + y^2 = 1\), \(\dfrac{dy}{dx} = -\dfrac xy\). The slope at \((0, 1)\) is:", ["0", "1", "−1", "undefined"], 0,
+               "The top of the circle, where the tangent is flat."),
+            mc(r"If \(y^3 = x\), then \(\dfrac{dy}{dx} =\)", [r"\(3y^2\)", r"\(\dfrac{1}{3y^2}\)", r"\(\dfrac13\)", r"\(3x^2\)"], 1,
+               r"\(3y^2\dfrac{dy}{dx} = 1\)."),
+        ],
+    },
+
+    # ============================ WEEKS 8 AND 9: THE FTC, SUBSTITUTION ============================
+    "ftc": {
+        "learn": [
+            block("Two ideas that turn out to be one",
+                  r"""<p>Up to now calculus has had two separate halves. Derivatives measure <b>slopes</b>. Integrals measure
+                  <b>areas</b>, and last lesson that meant adding up more and more rectangles.</p>
+                  <p>The Fundamental Theorem says the two halves undo each other. That has a very practical
+                  consequence: you can find an exact area by <b>antidifferentiating</b>, with no rectangles at all.</p>"""),
+            block("Part 2: the shortcut for areas",
+                  r"""<p>To work out \(\displaystyle\int_a^b f(x)\,dx\):</p>
+                  <ol><li>Find an antiderivative \(F\), a function whose derivative is \(f\).</li>
+                  <li>Work out \(F\) at the top limit and at the bottom limit.</li>
+                  <li>Subtract: <b>top minus bottom</b>, \(F(b) - F(a)\).</li></ol>
+                  <p>The bracket \(\Big[F(x)\Big]_a^b\) is shorthand for \(F(b) - F(a)\). You will see it in every
+                  solution.</p>
+                  <p>Leave out the \(+C\). With it you would get \(\big(F(b) + C\big) - \big(F(a) + C\big)\), and the two
+                  \(C\)s cancel.</p>""",
+                  {"view": [0, 2.4, 0, 4.6], "alt": "The area under the curve y equals x squared between x equals 0 and x equals 2, shaded",
+                   "shade": [{"f": "x^2", "dom": [0, 2]}], "curves": [{"f": "x^2"}],
+                   "segments": [{"from": [2, 0], "to": [2, 4], "style": "dash"}],
+                   "labels": [{"at": [1.5, 0.8], "text": "area = 8/3", "pos": "n"}]},
+                  r"The worked example's area under \(y = x^2\) from 0 to 2. Rectangles could only close in on it. The antiderivative \(\frac{x^3}{3}\) gives it exactly: \(\frac83\)."),
+            block("Why it works: speed and distance",
+                  r"""<p>Drive at a steady 60 km/h for 2 hours and you cover 120 km: a rectangle of height 60 and width 2
+                  under the speed graph. When the speed changes, the distance is still the area under the speed
+                  graph, which is the integral of the speed.</p>
+                  <p>There is a second way to get the distance: read the odometer at the end and at the start, and
+                  subtract. Position is an antiderivative of speed, because speed is the derivative of position. So
+                  the area under the speed graph equals the change in its antiderivative. That is Part 2, and it is
+                  also called the <b>net change</b> rule: the integral of a rate of change is the total change.</p>"""),
+            block("Part 1: the area-so-far function",
+                  r"""<p>Fix a starting point \(a\) and let the right-hand edge move. The area collected so far depends on
+                  where the edge is, so it is a function of \(x\):</p>
+                  \[A(x) = \int_a^x f(t)\,dt\]
+                  <p>(The letter \(t\) is only a placeholder, used because \(x\) is busy being the edge.) Push the edge a
+                  little to the right and the area grows by a thin strip whose height is \(f(x)\). So the area grows
+                  at a rate equal to the height of the curve: \(A'(x) = f(x)\). That is Part 1.</p>
+                  <p>If the top limit is a function such as \(x^2\) and not a plain \(x\), the chain rule adds its
+                  derivative: replace \(t\) with the top limit, then multiply by the top limit's derivative.</p>"""),
+        ],
+        "examples": [
+            ex(r"Evaluate \(\displaystyle\int_1^3 2x\,dx\), and check it with geometry.",
+               [r"An antiderivative of \(2x\) is \(x^2\).",
+                r"\(\Big[x^2\Big]_1^3 = 3^2 - 1^2 = 9 - 1 = 8\).",
+                r"Check: the region under the line \(y = 2x\) from 1 to 3 is a trapezoid with parallel sides 2 and 6 and width 2. Its area is \(\frac{2 + 6}{2}\cdot 2 = 8\). ✓"],
+               r"\(8\)"),
+            "main",
+            ex(r"Evaluate \(\displaystyle\int_0^2\left(3x^2 - 4x + 1\right)dx\).",
+               [r"Antidifferentiate term by term: \(F(x) = x^3 - 2x^2 + x\).",
+                r"Top limit: \(F(2) = 8 - 8 + 2 = 2\).",
+                r"Bottom limit: \(F(0) = 0\).",
+                r"Top minus bottom: \(2 - 0\)."],
+               r"\(2\)"),
+        ],
+        "steps": {
+            0: [r"Write the root as a power: \(\sqrt{x} = x^{1/2}\). Add 1 to the power and divide by the new power: \(F(x) = \frac23x^{3/2}\).",
+                r"Top limit: \(4^{3/2} = (\sqrt4)^3 = 8\), so \(F(4) = \frac{16}{3}\).",
+                r"Bottom limit: \(F(1) = \frac23\).",
+                r"Top minus bottom: \(\frac{16}{3} - \frac23 = \frac{14}{3}\)."],
+            1: [r"Part 1 says: replace \(t\) with the top limit. That gives \(\cos(x^2)\).",
+                r"The top limit is \(x^2\), not a plain \(x\), so multiply by its derivative, \(2x\).",
+                r"\(2x\cos(x^2)\)."],
+            2: [r"An antiderivative of \(\sin x\) is \(-\cos x\) (check: its derivative is \(\sin x\)).",
+                r"Top limit: \(-\cos\pi = -(-1) = 1\). Bottom limit: \(-\cos 0 = -1\).",
+                r"Top minus bottom: \(1 - (-1) = 2\)."],
+        },
+        "quiz": [
+            mc(r"\(\displaystyle\int_1^2 4x^3\,dx =\)", ["16", "15", "12", "28"], 1, r"\(\Big[x^4\Big]_1^2 = 16 - 1\)."),
+            mc(r"\(F' = f\), \(F(1) = 3\) and \(F(5) = 10\). Then \(\displaystyle\int_1^5 f(x)\,dx =\)", ["13", "7", "−7", "30"], 1,
+               r"Top minus bottom: \(F(5) - F(1) = 10 - 3\)."),
+        ],
+    },
+    "u-sub": {
+        "learn": [
+            block("Run the chain rule backwards",
+                  r"""<p>The chain rule says \(\dfrac{d}{dx}\sin(x^2) = \cos(x^2)\cdot 2x\). Read that from right to left and it
+                  is an integral you can do:</p>
+                  \[\int\cos(x^2)\cdot 2x\,dx = \sin(x^2) + C\]
+                  <p>Every chain rule derivative has this shape: an outside function with an inside function in it,
+                  <b>times the derivative of the inside</b>. Substitution is how you spot that shape in an integral
+                  and undo it.</p>"""),
+            block("The method",
+                  r"""<ol><li><b>Choose \(u\)</b>: the inside function, the one whose derivative is also sitting in the
+                  integral.</li>
+                  <li><b>Find \(du\)</b>: differentiate \(u\) and attach \(dx\). If \(u = x^2\) then \(du = 2x\,dx\).</li>
+                  <li><b>Rewrite everything</b> in terms of \(u\). The \(dx\) has to go as well: it is part of \(du\).</li>
+                  <li><b>Integrate</b> in \(u\). It should now be one of the basic integrals.</li>
+                  <li><b>Put \(x\) back.</b></li></ol>
+                  <p>You can always check the answer: differentiate it, and you should get back what you started
+                  with.</p>"""),
+            block("When the number in front is off",
+                  r"""<p>Take \(\displaystyle\int x\cos(x^2)\,dx\). With \(u = x^2\) you need \(du = 2x\,dx\), and the integral
+                  only has \(x\,dx\). Solve for what you do have: \(x\,dx = \frac12\,du\). The integral becomes
+                  \(\frac12\displaystyle\int\cos u\,du = \frac12\sin(x^2) + C\).</p>
+                  <p>This works for a missing <b>number</b> only. If what's missing has an \(x\) in it, you cannot
+                  patch it up, and that choice of \(u\) doesn't work.</p>"""),
+            block("Definite integrals: change the limits",
+                  r"""<p>The limits on \(\displaystyle\int_a^b\) are values of \(x\). Once the integral is written in \(u\),
+                  they have to be values of \(u\): put each limit into the formula for \(u\). Then finish in \(u\).
+                  There is no need to go back to \(x\).</p>"""),
+        ],
+        "examples": [
+            ex(r"Compute \(\displaystyle\int 2(2x + 1)^3\,dx\).",
+               [r"The inside is \(2x + 1\). Let \(u = 2x + 1\), so \(du = 2\,dx\), and that 2 is already there.",
+                r"The integral becomes \(\displaystyle\int u^3\,du = \frac{u^4}{4} + C\).",
+                r"Put \(x\) back: \(\dfrac{(2x + 1)^4}{4} + C\).",
+                r"Check by differentiating: \(\frac14\cdot 4(2x + 1)^3\cdot 2 = 2(2x + 1)^3\). ✓"],
+               r"\(\dfrac{(2x + 1)^4}{4} + C\)"),
+            "main",
+            ex(r"Compute \(\displaystyle\int x^2\sqrt{x^3 + 1}\,dx\).",
+               [r"The inside is \(x^3 + 1\). Let \(u = x^3 + 1\), so \(du = 3x^2\,dx\).",
+                r"The integral has \(x^2\,dx\), which is \(\frac13\,du\).",
+                r"It becomes \(\frac13\displaystyle\int u^{1/2}\,du = \frac13\cdot\frac23u^{3/2} + C = \frac29u^{3/2} + C\).",
+                r"Put \(x\) back."],
+               r"\(\frac29(x^3 + 1)^{3/2} + C\)"),
+            ex(r"Evaluate \(\displaystyle\int_0^2\frac{x}{x^2 + 1}\,dx\).",
+               [r"Let \(u = x^2 + 1\), so \(du = 2x\,dx\) and \(x\,dx = \frac12\,du\).",
+                r"Change the limits: \(x = 0\) gives \(u = 1\), and \(x = 2\) gives \(u = 5\).",
+                r"The integral becomes \(\frac12\displaystyle\int_1^5\frac1u\,du = \frac12\Big[\ln u\Big]_1^5\).",
+                r"\(\frac12(\ln 5 - \ln 1) = \frac12\ln 5\), since \(\ln 1 = 0\)."],
+               r"\(\frac12\ln 5 \approx 0.805\)"),
+        ],
+        "steps": {
+            0: [r"The inside is \(x^2 + 1\). Let \(u = x^2 + 1\), so \(du = 2x\,dx\) and \(x\,dx = \frac12\,du\).",
+                r"The integral becomes \(\frac12\displaystyle\int u^4\,du = \frac12\cdot\frac{u^5}{5} + C\).",
+                r"Put \(x\) back: \(\frac{1}{10}(x^2 + 1)^5 + C\)."],
+            1: [r"Let \(u = 3x\), so \(du = 3\,dx\) and \(dx = \frac13\,du\).",
+                r"Change the limits: \(x = 0\) gives \(u = 0\), and \(x = 1\) gives \(u = 3\).",
+                r"\(\frac13\displaystyle\int_0^3 e^u\,du = \frac13\Big[e^u\Big]_0^3 = \frac13(e^3 - 1)\)."],
+            2: [r"Write \(\tan x = \dfrac{\sin x}{\cos x}\). The bottom's derivative is almost the top, so let \(u = \cos x\).",
+                r"\(du = -\sin x\,dx\), so \(\sin x\,dx = -du\).",
+                r"The integral becomes \(-\displaystyle\int\frac1u\,du = -\ln|u| + C = -\ln|\cos x| + C\)."],
+        },
+        "quiz": [
+            mc(r"\(\displaystyle\int\cos(5x)\,dx =\)", [r"\(\sin(5x) + C\)", r"\(5\sin(5x) + C\)", r"\(\frac15\sin(5x) + C\)", r"\(-\frac15\sin(5x) + C\)"], 2,
+               r"\(u = 5x\), so \(dx = \frac15\,du\)."),
+            mc(r"With \(u = x^2 + 1\), the integral \(\displaystyle\int_0^2 2x(x^2 + 1)^3\,dx\) becomes:",
+               [r"\(\displaystyle\int_0^2 u^3\,du\)", r"\(\displaystyle\int_1^5 u^3\,du\)", r"\(\displaystyle\int_0^4 u^3\,du\)", r"\(\displaystyle\int_1^5 2u^3\,du\)"], 1,
+               r"\(du = 2x\,dx\) uses up the \(2x\), and the limits become \(u(0) = 1\) and \(u(2) = 5\)."),
+            mc(r"\(\displaystyle\int 2xe^{x^2}\,dx =\)", [r"\(e^{x^2} + C\)", r"\(2e^{x^2} + C\)", r"\(x^2e^{x^2} + C\)", r"\(\dfrac{e^{x^2}}{2x} + C\)"], 0,
+               r"\(u = x^2\), \(du = 2x\,dx\), so it is \(\displaystyle\int e^u\,du\)."),
+        ],
+    },
     # ============================ PICTURES FOR OTHER LESSONS ============================
     "inverse-functions": picture(
         {"view": [-0.5, 5, -0.5, 5], "alt": "The curves y equals x squared and y equals the square root of x, mirror images in the line y equals x",
@@ -574,10 +969,10 @@ DEEP = {
          "labels": [{"at": [1.4, 4.6], "text": "e to the x", "pos": "w"}, {"at": [4.4, 1.3], "text": "ln x", "pos": "s"}]},
         r"\(\ln x\) is the mirror image of \(e^x\) in the dashed line \(y = x\). Each one undoes the other."),
     "exp-log-derivatives": picture(
-        {"view": [-3, 2.5, -0.5, 8], "alt": "The curve y equals e to the x with a tangent line you can slide along it",
-         "curves": [{"f": "exp(x)"}],
-         "tool": {"type": "tangent", "start": 1, "read": "At x = {x} the height is {y} and the slope is {m}: the same number."}},
-        r"For \(e^x\) the slope at every point equals the height there. That is all \(\frac{d}{dx}e^x = e^x\) says."),
+        {"view": [-0.5, 6, -3, 2.5], "alt": "The curve y equals the natural log of x with a tangent line you can slide along it",
+         "curves": [{"f": "ln(x)", "dom": [0.05, 6]}],
+         "tool": {"type": "tangent", "dom": [0.25, 6], "start": 1, "read": "At x = {x} the slope of ln x is {m}."}},
+        r"The slope of \(\ln x\) at any point is 1 divided by the \(x\)-value there: steep near 0, and flatter the further right you go. That is \(\frac{d}{dx}\ln x = \frac1x\)."),
     "critical-points": picture(
         {"view": [-3.5, 5.5, -30, 12], "alt": "The cubic from the worked example, with a tangent line you can slide along it",
          "curves": [{"f": "x^3-3*x^2-9*x+2"}], "tool": {"type": "tangent", "start": -2, "read": "At x = {x} the slope is {m}."}},

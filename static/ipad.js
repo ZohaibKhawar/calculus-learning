@@ -36,7 +36,7 @@ window.IpadHero = (function () {
     { week: 2, unit: "Week 2", unit_title: "Limits", name: "Continuity", formulas: [["Continuity", "\\lim_{x\\to a} f(x) = f(a)"]] },
     { week: 3, unit: "Week 3", unit_title: "Derivatives", name: "Power Rule & Basic Rules", formulas: [
       ["Power rule", "\\frac{d}{dx}x^n = nx^{n-1}"], ["Product rule", "(fg)' = f'g + fg'"]] },
-    { week: 5, unit: "Week 5", unit_title: "Chain & Quotient Rules", name: "Chain Rule", formulas: [["Chain rule", "\\frac{d}{dx}f(g(x)) = f'(g(x))\\,g'(x)"]] },
+    { week: 5, unit: "Week 5", unit_title: "Chain Rule & Implicit Differentiation", name: "Chain Rule", formulas: [["Chain rule", "\\frac{d}{dx}f(g(x)) = f'(g(x))\\,g'(x)"]] },
     { week: 8, unit: "Week 8", unit_title: "Antiderivatives & the FTC", name: "Fundamental Theorem of Calculus", formulas: [["FTC part 2", "\\int_a^b f(x)\\,dx = F(b)-F(a)"]] },
     { week: 12, unit: "Week 12", unit_title: "Partial Derivatives & Tangent Planes", name: "Tangent Planes", formulas: [["Tangent plane", "z - z_0 = f_x(x - x_0) + f_y(y - y_0)"]] }
   ];

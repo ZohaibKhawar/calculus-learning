@@ -417,7 +417,7 @@ WEEKS_1_6 = [
         "Beginner", 20, ["review-simplifying", "review-graphing"],
         r"In an exponential function \(b^x\), the variable is in the <b>exponent</b>. For \(b \gt 1\) it grows faster than "
         r"any power of \(x\); for \(0 \lt b \lt 1\) it decays. The most important base is \(e \approx 2.71828\), which "
-        r"shows up in continuous growth and has the nicest derivative (Week 5). Every \(b^x\) has domain all reals, "
+        r"shows up in continuous growth and has the nicest derivative (later this week). Every \(b^x\) has domain all reals, "
         r"range \((0, \infty)\), and the horizontal asymptote \(y = 0\).",
         [
             [r"Exponential function (\(b \gt 0,\ b \ne 1\))", r"f(x) = b^x"],
@@ -467,12 +467,68 @@ WEEKS_1_6 = [
         [pr(r"\(\frac{d}{dx}(3\sin x - 2\cos x)\)", "Differentiate each term.", r"\(3\cos x + 2\sin x\)"),
          pr(r"\(\frac{d}{dx}(x^2\sin x)\)", "Product rule.", r"\(2x\sin x + x^2\cos x\)"),
          pr(r"Exact value of \(\cos\frac{2\pi}{3}\).", r"\(\frac{2\pi}{3} = 120^\circ\) is in the second quadrant.", r"\(-\frac12\)")],
-        [mc(r"\(\frac{d}{dx}\tan x =\)", [r"\(\sec x\tan x\)", r"\(-\csc^2x\)", r"\(\cot x\)", r"\(\sec^2x\)"], 3, r"Write \(\tan x = \frac{\sin x}{\cos x}\). The quotient rule (Week 5) turns that into \(\frac{1}{\cos^2x}\), which is \(\sec^2x\)."),
+        [mc(r"\(\frac{d}{dx}\tan x =\)", [r"\(\sec x\tan x\)", r"\(-\csc^2x\)", r"\(\cot x\)", r"\(\sec^2x\)"], 3, r"Write \(\tan x = \frac{\sin x}{\cos x}\). The quotient rule (the next lesson) turns that into \(\frac{1}{\cos^2x}\), which is \(\sec^2x\)."),
          mc(r"\(\sin\frac\pi6 =\)", [r"\(\frac12\)", r"\(\frac{\sqrt3}{2}\)", r"\(\frac{\sqrt2}{2}\)", "1"], 0, r"\(\frac\pi6 = 30^\circ\)."),
          mc(r"\(\frac{d}{dx}\cos x =\)", [r"\(\sin x\)", r"\(-\sin x\)", r"\(-\cos x\)", r"\(\sec x\)"], 1, "Cosine-family derivatives carry a minus sign.")],
     ),
+    lesson(
+        "quotient-rule", 4, "Quotient Rule", "quotient rule division derivative fraction low d high",
+        "Intermediate", 20, ["product-rule"],
+        r"For a fraction of two functions, use the quotient rule: <b>low d-high minus high d-low, over low squared</b>. "
+        r"The order in the numerator matters because of the minus sign. If the numerator is a constant, the rule "
+        r"collapses to a shorter formula worth knowing.",
+        [
+            ["Quotient rule", r"\left(\frac fg\right)' = \frac{f'g - fg'}{g^2}"],
+            ["Constant over a function", r"\left(\frac{c}{g}\right)' = -\frac{c\,g'}{g^2}"],
+            ["Where tan' comes from", r"\left(\frac{\sin x}{\cos x}\right)' = \frac{\cos^2x + \sin^2x}{\cos^2x} = \sec^2x"],
+        ],
+        ex(r"Differentiate \(y = \dfrac{x^2 + 1}{x - 3}\).",
+           [r"\(f = x^2 + 1\), \(f' = 2x\); \(g = x - 3\), \(g' = 1\).",
+            r"\(\frac{2x(x - 3) - (x^2 + 1)(1)}{(x - 3)^2}\).",
+            r"Simplify the top: \(2x^2 - 6x - x^2 - 1\)."],
+           r"\(y' = \dfrac{x^2 - 6x - 1}{(x - 3)^2}\)"),
+        [r"Reversing the order to \(fg' - f'g\), which flips the sign.",
+         "Forgetting to square the denominator.",
+         "Sign errors when subtracting the second product. Keep it in brackets."],
+        [pr(r"\(\frac{d}{dx}\dfrac{x}{x + 1}\)", "Quotient rule.", r"\(\frac{(x + 1) - x}{(x + 1)^2} = \frac{1}{(x + 1)^2}\)"),
+         pr(r"\(\frac{d}{dx}\dfrac{\sin x}{x}\)", r"\(f = \sin x\), \(g = x\).", r"\(\frac{x\cos x - \sin x}{x^2}\)"),
+         pr(r"\(\frac{d}{dx}\dfrac{3}{x^2 + 1}\)", "Constant numerator shortcut.", r"\(-\frac{6x}{(x^2 + 1)^2}\)")],
+        [mc(r"Using the quotient rule, \(\frac{d}{dx}\frac1x =\)", [r"\(\frac{1}{x^2}\)", r"\(\ln x\)", r"\(-\frac{1}{x^2}\)", r"\(-\frac1x\)"], 2, r"\(\frac{0\cdot x - 1\cdot 1}{x^2}\)."),
+         mc(r"\(\frac{d}{dx}\dfrac{x}{x^2 + 1} =\)", [r"\(\frac{1}{2x}\)", r"\(\frac{x^2 - 1}{(x^2 + 1)^2}\)", r"\(\frac{1 + x^2}{(x^2 + 1)^2}\)", r"\(\frac{1 - x^2}{(x^2 + 1)^2}\)"], 3,
+            r"\(\frac{(x^2 + 1) - x\cdot 2x}{(x^2 + 1)^2}\)."),
+         mc(r"\(f = 2,\ f' = 1,\ g = 4,\ g' = 3\) at a point. Then \(\left(\frac fg\right)' =\)", [r"\(-\frac18\)", r"\(\frac{1}{3}\)", r"\(\frac{5}{8}\)", r"\(-\frac12\)"], 0,
+            r"\(\frac{1\cdot 4 - 2\cdot 3}{16} = -\frac{2}{16}\).")],
+    ),
+    lesson(
+        "exp-derivatives", 4, "Derivatives of eˣ & aˣ", "derivative e^x 2^x a^x exponential derivative ln a natural base",
+        "Intermediate", 20, ["exponential-functions", "quotient-rule"],
+        r"\(e^x\) is its own derivative: at every point its slope equals its height, and that is what makes \(e\) "
+        r"special. Every other base picks up one extra constant factor, \(\ln a\), the natural logarithm of the base. "
+        r"Don't use the power rule here: it is for a variable <b>base</b> like \(x^3\), and these have a variable "
+        r"<b>exponent</b>.",
+        [
+            ["The natural exponential", r"\frac{d}{dx}e^x = e^x"],
+            ["Any base", r"\frac{d}{dx}a^x = a^x\ln a\qquad (a \gt 0)"],
+            ["With a constant in front", r"\frac{d}{dx}\big[c\,e^x\big] = c\,e^x"],
+            ["Why e fits the pattern", r"\ln e = 1,\ \text{so}\ \frac{d}{dx}e^x = e^x\ln e = e^x"],
+        ],
+        ex(r"Differentiate \(y = x^2e^x\).",
+           [r"It is a product: \(f = x^2\) with \(f' = 2x\), and \(g = e^x\) with \(g' = e^x\).",
+            r"Product rule: \(y' = 2x\,e^x + x^2e^x\).",
+            r"Factor out \(e^x\)."],
+           r"\(y' = e^x(x^2 + 2x)\)"),
+        [r"Using the power rule on \(2^x\): \((2^x)' \ne x\,2^{x-1}\). It's \(2^x\ln 2\).",
+         r"Writing \((e^x)' = xe^{x-1}\). The derivative of \(e^x\) is \(e^x\), unchanged.",
+         r"Treating \(e^2\) or \(\ln 3\) as if it had an \(x\) in it. Each is just a number, so its derivative is 0."],
+        [pr(r"\(\frac{d}{dx}\big(3e^x - 4x^2\big)\)", "Term by term. The 3 waits outside.", r"\(3e^x - 8x\)"),
+         pr(r"\(\frac{d}{dx}2^x\)", r"\(a^x\ln a\) with \(a = 2\).", r"\(2^x\ln 2\)"),
+         pr(r"\(\frac{d}{dx}\dfrac{e^x}{x}\)", r"Quotient rule with \(f = e^x\), \(g = x\).", r"\(\frac{xe^x - e^x}{x^2} = \frac{e^x(x - 1)}{x^2}\)")],
+        [mc(r"\(\frac{d}{dx}5^x =\)", [r"\(x\,5^{x-1}\)", r"\(5^x\)", r"\(\frac{5^x}{\ln 5}\)", r"\(5^x\ln 5\)"], 3, r"\(a^x\ln a\)."),
+         mc(r"\(\frac{d}{dx}\big(xe^x\big) =\)", [r"\(e^x\)", r"\(e^x(x + 1)\)", r"\(xe^x\)", r"\(e^x(x - 1)\)"], 1, r"Product rule: \(e^x + xe^x\)."),
+         mc(r"The slope of \(y = e^x\) at \(x = 0\) is:", ["0", "e", "1", r"\(\frac1e\)"], 2, r"The slope equals the height, and \(e^0 = 1\).")],
+    ),
 
-    # ======================= WEEK 5: CHAIN & QUOTIENT RULES, IMPLICIT, LOGS =======================
+    # ======================= WEEK 5: CHAIN RULE, IMPLICIT, LOGS =======================
     lesson(
         "chain-rule", 5, "Chain Rule", "chain rule composite function layers inside outside",
         "Intermediate", 25, ["derivative-rules", "trig-functions"],
@@ -499,34 +555,6 @@ WEEKS_1_6 = [
         [mc(r"\(\frac{d}{dx}(2x + 1)^3 =\)", [r"\(3(2x + 1)^2\)", r"\(6(2x + 1)^2\)", r"\(6(2x + 1)^3\)", r"\(3(2x)^2\)"], 1, r"\(3(2x + 1)^2\cdot 2\)."),
          mc(r"\(\frac{d}{dx}\sin(x^2) =\)", [r"\(\cos(x^2)\)", r"\(\cos(2x)\)", r"\(2x\cos(x^2)\)", r"\(2x\sin(x^2)\)"], 2, r"The outside function \(\sin\) differentiates to \(\cos\), and the inside \(x^2\) has derivative \(2x\)."),
          mc(r"\(h(x) = f(g(x))\), \(g(1) = 3\), \(g'(1) = 2\), \(f'(3) = 5\). Then \(h'(1) =\)", ["10", "15", "6", "5"], 0, r"\(f'(g(1))\cdot g'(1) = 5\cdot 2\).")],
-    ),
-    lesson(
-        "quotient-rule", 5, "Quotient Rule", "quotient rule division derivative fraction low d high",
-        "Intermediate", 20, ["product-rule"],
-        r"For a fraction of two functions, use the quotient rule: <b>low d-high minus high d-low, over low squared</b>. "
-        r"The order in the numerator matters because of the minus sign. If the numerator is a constant, it's often "
-        r"faster to rewrite as a negative power and use the chain rule.",
-        [
-            ["Quotient rule", r"\left(\frac fg\right)' = \frac{f'g - fg'}{g^2}"],
-            ["Constant over a function", r"\left(\frac{c}{g}\right)' = -\frac{c\,g'}{g^2}"],
-            ["Where tan' comes from", r"\left(\frac{\sin x}{\cos x}\right)' = \frac{\cos^2x + \sin^2x}{\cos^2x} = \sec^2x"],
-        ],
-        ex(r"Differentiate \(y = \dfrac{x^2 + 1}{x - 3}\).",
-           [r"\(f = x^2 + 1\), \(f' = 2x\); \(g = x - 3\), \(g' = 1\).",
-            r"\(\frac{2x(x - 3) - (x^2 + 1)(1)}{(x - 3)^2}\).",
-            r"Simplify the top: \(2x^2 - 6x - x^2 - 1\)."],
-           r"\(y' = \dfrac{x^2 - 6x - 1}{(x - 3)^2}\)"),
-        [r"Reversing the order to \(fg' - f'g\), which flips the sign.",
-         "Forgetting to square the denominator.",
-         "Sign errors when subtracting the second product. Keep it in brackets."],
-        [pr(r"\(\frac{d}{dx}\dfrac{x}{x + 1}\)", "Quotient rule.", r"\(\frac{(x + 1) - x}{(x + 1)^2} = \frac{1}{(x + 1)^2}\)"),
-         pr(r"\(\frac{d}{dx}\dfrac{\sin x}{x}\)", r"\(f = \sin x\), \(g = x\).", r"\(\frac{x\cos x - \sin x}{x^2}\)"),
-         pr(r"\(\frac{d}{dx}\dfrac{3}{x^2 + 1}\)", "Constant numerator shortcut.", r"\(-\frac{6x}{(x^2 + 1)^2}\)")],
-        [mc(r"Using the quotient rule, \(\frac{d}{dx}\frac1x =\)", [r"\(\frac{1}{x^2}\)", r"\(\ln x\)", r"\(-\frac{1}{x^2}\)", r"\(-\frac1x\)"], 2, r"\(\frac{0\cdot x - 1\cdot 1}{x^2}\)."),
-         mc(r"\(\frac{d}{dx}\dfrac{x}{x^2 + 1} =\)", [r"\(\frac{1}{2x}\)", r"\(\frac{x^2 - 1}{(x^2 + 1)^2}\)", r"\(\frac{1 + x^2}{(x^2 + 1)^2}\)", r"\(\frac{1 - x^2}{(x^2 + 1)^2}\)"], 3,
-            r"\(\frac{(x^2 + 1) - x\cdot 2x}{(x^2 + 1)^2}\)."),
-         mc(r"\(f = 2,\ f' = 1,\ g = 4,\ g' = 3\) at a point. Then \(\left(\frac fg\right)' =\)", [r"\(-\frac18\)", r"\(\frac{1}{3}\)", r"\(\frac{5}{8}\)", r"\(-\frac12\)"], 0,
-            r"\(\frac{1\cdot 4 - 2\cdot 3}{16} = -\frac{2}{16}\).")],
     ),
     lesson(
         "implicit", 5, "Implicit Differentiation", "implicit dy/dx circle relation",
@@ -583,16 +611,17 @@ WEEKS_1_6 = [
          mc(r"The solution of \(e^x = 10\) is:", [r"\(\ln 10\)", r"\(\log 10\)", r"\(\frac{10}{e}\)", r"\(e^{10}\)"], 0, r"Take \(\ln\) of both sides.")],
     ),
     lesson(
-        "exp-log-derivatives", 5, "Derivatives of eˣ, aˣ & Logarithms", "derivative e^x 2^x a^x ln x log logarithmic differentiation natural",
-        "Intermediate", 25, ["chain-rule", "log-functions"],
-        r"\(e^x\) is its own derivative, which is what makes \(e\) special. Every other base picks up a factor of "
-        r"\(\ln a\). The natural log differentiates to \(\frac1x\). Combine these with the chain rule constantly. For "
-        r"functions like \(x^x\), where the variable is in both the base and the exponent, use <b>logarithmic "
-        r"differentiation</b>: take \(\ln\) of both sides first.",
+        "exp-log-derivatives", 5, "Derivatives of Logarithms & Exponentials with the Chain Rule", "derivative ln x log e^x a^x chain rule logarithmic differentiation natural",
+        "Intermediate", 25, ["chain-rule", "log-functions", "exp-derivatives"],
+        r"The natural log differentiates to \(\frac1x\), and a log in any other base divides by \(\ln b\) as well. "
+        r"Week 4 gave the derivatives of \(e^x\) and \(a^x\) on their own. Now that you have the chain rule they work "
+        r"on \(e^{g(x)}\) and \(\ln g(x)\) too, and that is how they usually turn up. For functions like \(x^x\), where "
+        r"the variable is in both the base and the exponent, use <b>logarithmic differentiation</b>: take \(\ln\) of "
+        r"both sides first.",
         [
-            ["Exponentials", r"\frac{d}{dx}e^x = e^x,\qquad \frac{d}{dx}a^x = a^x\ln a"],
             ["Logarithms", r"\frac{d}{dx}\ln x = \frac1x,\qquad \frac{d}{dx}\log_b x = \frac{1}{x\ln b},\qquad \frac{d}{dx}\ln|x| = \frac1x"],
-            ["With the chain rule", r"\frac{d}{dx}e^{g(x)} = g'(x)e^{g(x)},\qquad \frac{d}{dx}\ln g(x) = \frac{g'(x)}{g(x)}"],
+            ["Log of a function", r"\frac{d}{dx}\ln g(x) = \frac{g'(x)}{g(x)}"],
+            ["Exponentials with the chain rule", r"\frac{d}{dx}e^{g(x)} = g'(x)e^{g(x)},\qquad \frac{d}{dx}a^{g(x)} = g'(x)\,a^{g(x)}\ln a"],
             ["Logarithmic differentiation", r"\ln y = \ln f(x) \;\Rightarrow\; \frac{y'}{y} = \frac{d}{dx}\ln f(x)"],
         ],
         ex(r"Differentiate \(y = x^x\) (for \(x \gt 0\)).",
@@ -600,15 +629,15 @@ WEEKS_1_6 = [
             r"Differentiate both sides: \(\frac{y'}{y} = \ln x + x\cdot\frac1x = \ln x + 1\).",
             r"Multiply by \(y = x^x\)."],
            r"\(y' = x^x(\ln x + 1)\)"),
-        [r"Using the power rule on \(2^x\): \((2^x)' \ne x\,2^{x-1}\). It's \(2^x\ln 2\).",
+        [r"Leaving out the inside's derivative: \(\big(\ln(x^2 + 1)\big)' = \frac{2x}{x^2 + 1}\), not \(\frac{1}{x^2 + 1}\).",
          r"Forgetting the chain rule: \((e^{3x})' = 3e^{3x}\).",
          r"Treating \(x^x\) as a power or an exponential. It needs logarithmic differentiation."],
-        [pr(r"\(\frac{d}{dx}2^x\)", r"\(a^x\ln a\).", r"\(2^x\ln 2\)"),
+        [pr(r"\(\frac{d}{dx}\big(x\ln x\big)\)", "Product rule.", r"\(\ln x + 1\)"),
          pr(r"\(\frac{d}{dx}\ln(x^2 + 1)\)", r"\(\frac{g'}{g}\).", r"\(\frac{2x}{x^2 + 1}\)"),
          pr(r"\(\frac{d}{dx}e^{x^2}\)", r"Inside \(x^2\).", r"\(2xe^{x^2}\)")],
-        [mc(r"\(\frac{d}{dx}5^x =\)", [r"\(x\,5^{x-1}\)", r"\(5^x\)", r"\(\frac{5^x}{\ln 5}\)", r"\(5^x\ln 5\)"], 3, r"\(a^x\ln a\)."),
-         mc(r"\(\frac{d}{dx}\ln(3x) =\)", [r"\(\frac1x\)", r"\(\frac{3}{x}\)", r"\(\frac{1}{3x}\)", r"\(3\ln x\)"], 0, r"\(\frac{3}{3x} = \frac1x\)."),
-         mc(r"\(\frac{d}{dx}\big(xe^x\big) =\)", [r"\(e^x\)", r"\(e^x(x + 1)\)", r"\(xe^x\)", r"\(e^x(x - 1)\)"], 1, r"Product rule: \(e^x + xe^x\).")],
+        [mc(r"\(\frac{d}{dx}\ln(3x) =\)", [r"\(\frac1x\)", r"\(\frac{3}{x}\)", r"\(\frac{1}{3x}\)", r"\(3\ln x\)"], 0, r"\(\frac{3}{3x} = \frac1x\)."),
+         mc(r"\(\frac{d}{dx}e^{5x} =\)", [r"\(e^{5x}\)", r"\(5xe^{5x-1}\)", r"\(5e^{5x}\)", r"\(\frac{e^{5x}}{5}\)"], 2, r"The inside \(5x\) has derivative 5."),
+         mc(r"\(\frac{d}{dx}\log_2 x =\)", [r"\(\frac{1}{x}\)", r"\(\frac{1}{x\ln 2}\)", r"\(\frac{\ln 2}{x}\)", r"\(\frac{2}{x}\)"], 1, r"\(\frac{1}{x\ln b}\) with \(b = 2\).")],
     ),
 
     # ======================= WEEK 6: CRITICAL POINTS & CURVE SKETCHING =======================
