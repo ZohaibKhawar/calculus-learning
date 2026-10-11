@@ -20,8 +20,8 @@ WEEK_TITLES = {
     1: "Precalculus Review",
     2: "Limits",
     3: "Derivatives",
-    4: "Inverse, Exponential & Trig Functions",
-    5: "Chain & Quotient Rules, Implicit Differentiation, Logarithms",
+    4: "Inverse, Exponential & Trig Functions, Quotient Rule",
+    5: "Chain Rule, Implicit Differentiation & Logarithms",
     6: "Critical Points & Curve Sketching",
     7: "IVT, MVT, Newton's Method & Optimization",
     8: "Antiderivatives, Areas Under Curves & the FTC",
@@ -46,6 +46,15 @@ def _extra(lesson):
     return lesson
 
 
+def _minutes(lesson):
+    """About how long a lesson takes, worked out from what is in it, so that a short lesson
+    doesn't claim to be a long one: reading speed for the text, and a few minutes for each
+    worked example, practice problem and quiz question. Rounded to five minutes."""
+    words = len(lesson["idea"].split()) + sum(len((b["body"] + b.get("cap", "")).split()) for b in lesson["learn"])
+    minutes = words / 120 + 2 + 3 * len(lesson["examples"]) + 2 * len(lesson["practice"]) + len(lesson["quiz"])
+    return max(10, 5 * round(minutes / 5))
+
+
 def _deepen(lesson):
     """Merge in what lessons_deep.py has for this lesson."""
     more = DEEP.get(lesson["id"], {})
@@ -64,6 +73,7 @@ for _l in LESSONS:
     _l["unit_title"] = WEEK_TITLES[_l["week"]]
     _l["also"] = EVERYDAY.get(_l["id"], []) + SEARCH.get(_l["id"], ("", []))[1]
     _deepen(_l)
+    _l["minutes"] = _minutes(_l)
 add_symbols(LESSONS)
 
 LESSON_IDS = {l["id"] for l in LESSONS}

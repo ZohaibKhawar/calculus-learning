@@ -172,6 +172,12 @@ CREATE TABLE IF NOT EXISTS reports (  -- forum posts flagged for the moderators
     created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, kind, target_id)
 );
+CREATE TABLE IF NOT EXISTS practice_marks (  -- "Got it" / "Not yet" on the Practice page
+    user_id TEXT NOT NULL,
+    question TEXT NOT NULL,      -- the page's short name for a question: week, then a hash of its text
+    got INTEGER NOT NULL,        -- 1 for "Got it", 0 for "Not yet"
+    PRIMARY KEY (user_id, question)
+);
 CREATE TABLE IF NOT EXISTS rate_limits (
     key TEXT PRIMARY KEY,        -- rule:who:window length
     window INTEGER NOT NULL,     -- start of the current window (unix seconds)
@@ -436,6 +442,7 @@ def forget_visitor(uid, posts):
     # One fixed statement per table, as in /api/reset.
     for sql in ("DELETE FROM progress WHERE user_id = ?",
                 "DELETE FROM quiz_scores WHERE user_id = ?",
+                "DELETE FROM practice_marks WHERE user_id = ?",
                 "DELETE FROM notes WHERE user_id = ?",
                 "DELETE FROM activity WHERE user_id = ?",
                 "DELETE FROM video_progress WHERE user_id = ?",
@@ -697,6 +704,7 @@ def has_saved(uid):
                            OR EXISTS (SELECT 1 FROM quiz_scores WHERE user_id = :u)
                            OR EXISTS (SELECT 1 FROM notes WHERE user_id = :u AND body != '')
                            OR EXISTS (SELECT 1 FROM video_progress WHERE user_id = :u)
+                           OR EXISTS (SELECT 1 FROM practice_marks WHERE user_id = :u)
                            OR EXISTS (SELECT 1 FROM uploads WHERE user_id = :u)
                            OR EXISTS (SELECT 1 FROM questions WHERE user_id = :u)
                            OR EXISTS (SELECT 1 FROM answers WHERE user_id = :u) AS saved""", {"u": uid})["saved"])
@@ -708,6 +716,8 @@ MERGE_SQL = (
     """INSERT OR IGNORE INTO progress (user_id, topic_id, updated)
        SELECT :dst, topic_id, updated FROM progress WHERE user_id = :src""",
     "UPDATE quiz_scores SET user_id = :dst WHERE user_id = :src",
+    """INSERT OR IGNORE INTO practice_marks (user_id, question, got)
+       SELECT :dst, question, got FROM practice_marks WHERE user_id = :src""",
     "INSERT OR IGNORE INTO activity (user_id, day) SELECT :dst, day FROM activity WHERE user_id = :src",
     # The best score for each level, as when a level is played again.
     """INSERT INTO video_progress (user_id, video_id, episode, level, score, total, updated)
@@ -1014,6 +1024,40 @@ def quiz():
     return jsonify(ok=True)
 
 
+# The Practice page's name for a question: its week, a colon, and a hash of its text.
+PRACTICE_KEY = re.compile(r"\d{1,2}:[0-9a-z]{1,8}")
+MAX_MARKS = 1000  # more than twice the questions there are, so old marks never crowd out new ones
+
+
+@app.get("/api/practice/marks")
+def practice_marks():
+    return jsonify({r["question"]: r["got"] for r in
+                    rows("SELECT question, got FROM practice_marks WHERE user_id = ?", (current_user(),))})
+
+
+@app.post("/api/practice/marks")
+def set_practice_marks():
+    """Save marks: {"marks": {question: 1 for "Got it", 0 for "Not yet", null to take the mark back}}.
+    The page sends one at a time, and once a whole browser's worth that it had kept on its own."""
+    uid = current_user()
+    limit_saves(uid)
+    marks = body().get("marks")
+    if not isinstance(marks, dict) or not 0 < len(marks) <= MAX_MARKS:
+        abort(400, "Nothing to save.")
+    for question, got in marks.items():
+        if not PRACTICE_KEY.fullmatch(str(question)) or got not in (0, 1, None):
+            abort(400, "Unknown question.")
+    held = one("SELECT COUNT(*) AS n FROM practice_marks WHERE user_id = ?", (uid,))["n"]
+    for question, got in marks.items():
+        if got is None:
+            run("DELETE FROM practice_marks WHERE user_id = ? AND question = ?", (uid, question))
+        elif held < MAX_MARKS or one("SELECT 1 FROM practice_marks WHERE user_id = ? AND question = ?", (uid, question)):
+            run("INSERT OR REPLACE INTO practice_marks (user_id, question, got) VALUES (?, ?, ?)", (uid, question, got))
+            held += 1
+    mark_active(uid)
+    return jsonify(ok=True)
+
+
 @app.post("/api/reset")
 def reset():
     uid = current_user()
@@ -1021,6 +1065,7 @@ def reset():
     # One fixed statement per table: no SQL is ever built from strings.
     for sql in ("DELETE FROM progress WHERE user_id = ?",
                 "DELETE FROM quiz_scores WHERE user_id = ?",
+                "DELETE FROM practice_marks WHERE user_id = ?",
                 "DELETE FROM notes WHERE user_id = ?",
                 "DELETE FROM activity WHERE user_id = ?",
                 "DELETE FROM video_progress WHERE user_id = ?",

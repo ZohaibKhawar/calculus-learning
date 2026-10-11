@@ -114,7 +114,7 @@ async function refreshMe() { ME = await api("/me"); }
 // Teachers on YouTube: [name, what they're good for, which lessons they cover]. A lesson links
 // only to the ones who teach its topic, and each link opens a YouTube search for that topic.
 const ESSENCE = new Set(["limits", "epsilon-delta", "lhopital", "derivative-definition", "derivative-rules",
-  "product-rule", "chain-rule", "trig-functions", "exponential-functions", "exp-log-derivatives", "implicit",
+  "product-rule", "chain-rule", "trig-functions", "exponential-functions", "exp-derivatives", "exp-log-derivatives", "implicit",
   "antiderivatives", "area-under-curves", "ftc", "average-value", "taylor", "de-intro", "vectors"]);
 const CREATORS = [
   ["Professor Leonard", "Full-length lectures that assume nothing", () => true],
@@ -432,8 +432,9 @@ function badge(level) {
 // it. (The page's own font draws zero with a slash, which next to math reads as the empty set.)
 const asMath = s => /^\s*[−-]?\d[\d.,]*\s*$/.test(s) ? `\\(${s.trim().replace("−", "-")}\\)` : s;
 
-// A lesson counts as understood once its quiz is passed: at least two thirds right.
-const PASS = 2 / 3;
+// A lesson counts as understood once its quiz is passed: at least 80% right. That is 4 of 5,
+// and every question of a shorter quiz, so guessing rarely gets through.
+const PASS = 0.8;
 const passedQuiz = id => (ME.quiz[id]?.best ?? 0) >= 100 * PASS - 1;
 
 // ---------- Learn ----------
@@ -867,7 +868,7 @@ async function dashboard() {
   $("#reset").onclick = async () => {
     if (!confirm("Reset all your progress, quiz scores and notes? This can't be undone.")) return;
     await api("/reset", { method: "POST" });
-    // The practice marks live in this browser, and go with the rest.
+    // Practice marks an older version of the page kept in this browser go with the rest.
     try { localStorage.removeItem("practice-marks"); } catch (e) { /* blocked */ }
     await refreshMe();
     renderSidebar();
@@ -1351,10 +1352,24 @@ function formulas() {
 // ---------- Practice (#/practice/<week>): extra questions for each week, with worked solutions ----------
 let PRACTICE = null;
 
-// After checking an answer the learner marks the question "Got it" or "Not yet". The marks stay
-// in this browser (they are a study aid, not a score): { question key: 1 for got it, 0 for not yet }.
-function practiceMarks() {
-  try { return JSON.parse(store("practice-marks") || "{}") || {}; } catch (e) { return {}; }
+// After checking an answer the learner marks the question "Got it" or "Not yet". The marks are
+// saved with the rest of their progress, so an account has them on every device:
+// { question key: 1 for got it, 0 for not yet }. They used to be kept in this browser only;
+// marks still held that way are handed to the server the first time the page opens.
+async function practiceMarks() {
+  let marks = {};
+  try { marks = await api("/practice/marks"); } catch (e) { /* an older server: carry on without saved marks */ }
+  let local = {};
+  try { local = JSON.parse(store("practice-marks") || "{}") || {}; } catch (e) { /* unreadable */ }
+  const mine = Object.entries(local).filter(([k, v]) => (v === 0 || v === 1) && !(k in marks));
+  if (Object.keys(local).length) {
+    try {
+      if (mine.length) await api("/practice/marks", { method: "POST", body: { marks: Object.fromEntries(mine) } });
+      localStorage.removeItem("practice-marks");
+    } catch (e) { /* keep them here and try again next time */ }
+    for (const [k, v] of mine) marks[k] = v;
+  }
+  return marks;
 }
 // A short, stable name for a question, made from its text.
 function questionKey(week, text) {
@@ -1375,7 +1390,7 @@ async function practicePage(arg) {
   const prev = PRACTICE[i - 1], next = PRACTICE[i + 1];
   const count = set.sets.reduce((n, s) => n + s.questions.length, 0);
   const kinds = new Set(set.sets.flatMap(s => s.questions.map(q => q.kind))).size;
-  const marks = practiceMarks();
+  const marks = await practiceMarks();
   let n = 0, filter = "all";
 
   V.innerHTML = `
@@ -1478,7 +1493,8 @@ async function practicePage(arg) {
     if (marker) {
       const prob = marker.closest(".prob"), key = prob.dataset.key, value = +marker.dataset.mark;
       if (marks[key] === value) delete marks[key]; else marks[key] = value;  // pressing your mark again takes it back
-      store("practice-marks", JSON.stringify(marks));
+      api("/practice/marks", { method: "POST", body: { marks: { [key]: marks[key] ?? null } } })
+        .catch(() => toast("That mark couldn't be saved. Check your connection and press it again."));
       paint(prob);
       // The counts change at once; the question stays where it is until another group is picked.
       const keep = filter;
@@ -2323,7 +2339,7 @@ function renderLanding() {
   }
   const course = courseLessons();
   const weekCount = new Set(course.map(l => l.week)).size;
-  $(".lede").textContent = `${course.length} short lessons in a ${weekCount}-week course, from algebra review to tangent planes. ` +
+  $(".lede").textContent = `${course.length} lessons in a ${weekCount}-week course, from algebra review to tangent planes. ` +
     "Start at the beginning, or jump to the exact topic you're stuck on.";
 
   const done = course.filter(l => isDone(l.id)).length;

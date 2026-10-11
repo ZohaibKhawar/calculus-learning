@@ -134,7 +134,7 @@ function startPage() {
         <li><b>Do the practice on paper.</b> Hints first, then the answer, then the worked steps.</li>
         <li><b>Pass the quiz.</b> That completes the lesson.</li>
       </ol>
-      <p>${course.length} lessons at about 20 to 30 minutes each. Three or four a week gets you through in a term.
+      <p>${course.length} lessons at about 15 to 30 minutes each. Three or four a week gets you through in a term.
         Stuck on something? Ask CalcBot (the button in the corner) or post on the <a href="#/forum">Q&amp;A forum</a>.</p>
     </section>
 
